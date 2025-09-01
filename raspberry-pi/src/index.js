@@ -6,6 +6,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 class VeoDongleRaspberryPi {
@@ -21,8 +22,73 @@ class VeoDongleRaspberryPi {
       }
     });
 
-    this.streamUrl = process.env.VEO_STREAM_URL || 'https://example.com/veo-stream';
-    this.port = process.env.PORT || 3000;
+    // Load configuration
+    this.config = this.loadConfig();
+
+    // Override with command line arguments if provided
+    this.streamUrl = process.argv[2] || this.config.veoStreamUrl || process.env.VEO_STREAM_URL || 'https://example.com/veo-stream';
+    this.port = process.env.PORT || this.config.port || 3000;
+  }
+
+  loadConfig() {
+    const configDir = path.join(__dirname, '..');
+
+    // Try to load JSON config first
+    try {
+      const jsonConfigPath = path.join(configDir, 'config.json');
+      if (fs.existsSync(jsonConfigPath)) {
+        console.log('Loading JSON configuration from config.json');
+        return JSON.parse(fs.readFileSync(jsonConfigPath, 'utf8'));
+      }
+    } catch (error) {
+      console.warn('Failed to load JSON config:', error.message);
+    }
+
+    // Fall back to JavaScript config
+    try {
+      const jsConfigPath = path.join(configDir, 'config.js');
+      if (fs.existsSync(jsConfigPath)) {
+        console.log('Loading JavaScript configuration from config.js');
+        return require(jsConfigPath);
+      }
+    } catch (error) {
+      console.warn('Failed to load JavaScript config:', error.message);
+    }
+
+    // Fall back to example config
+    try {
+      const exampleConfigPath = path.join(configDir, 'config.example.js');
+      if (fs.existsSync(exampleConfigPath)) {
+        console.log('Loading example configuration from config.example.js');
+        return require(exampleConfigPath);
+      }
+    } catch (error) {
+      console.warn('Failed to load example config:', error.message);
+    }
+
+    // Return default configuration
+    console.log('Using default configuration');
+    return {
+      veoStreamUrl: 'https://example.com/veo-stream',
+      port: 3000,
+      cloudUrl: 'http://localhost:4000',
+      deviceId: 'raspberry-pi-001',
+      viewport: { width: 1920, height: 1080 },
+      coordinates: {
+        click: { x: 100, y: 100 },
+        fullscreen: { x: 1765, y: 1045 },
+        playback: { x: 45, y: 1052 }
+      },
+      chromium: {
+        headless: false,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--start-fullscreen',
+          '--kiosk'
+        ]
+      }
+    };
   }
 
   async initialize() {
@@ -85,7 +151,8 @@ class VeoDongleRaspberryPi {
   async launchBrowser() {
     console.log('Launching Chromium browser...');
 
-    this.browser = await puppeteer.launch({
+    // Use configuration from JSON or fallback to defaults
+    const chromiumConfig = this.config.chromium || {
       headless: false,
       args: [
         '--no-sandbox',
@@ -100,12 +167,23 @@ class VeoDongleRaspberryPi {
         '--kiosk',
         '--disable-web-security',
         '--disable-features=VizDisplayCompositor'
-      ],
-      defaultViewport: null,
+      ]
+    };
+
+    this.browser = await puppeteer.launch({
+      headless: chromiumConfig.headless,
+      args: chromiumConfig.args,
+      defaultViewport: this.config.viewport || null,
       ignoreDefaultArgs: ['--disable-extensions']
     });
 
     this.page = await this.browser.newPage();
+
+    // Set viewport if specified
+    if (this.config.viewport) {
+      await this.page.setViewport(this.config.viewport);
+    }
+
     console.log('Chromium browser launched successfully');
   }
 
@@ -133,28 +211,35 @@ class VeoDongleRaspberryPi {
 
   async enterFullscreen() {
     try {
-      // Try multiple methods to enter fullscreen
-      await this.page.evaluate(() => {
-        const video = document.querySelector('video');
-        if (video) {
-          if (video.requestFullscreen) {
-            video.requestFullscreen();
-          } else if (video.webkitRequestFullscreen) {
-            video.webkitRequestFullscreen();
-          } else if (video.msRequestFullscreen) {
-            video.msRequestFullscreen();
+      // Use coordinate-based clicking if coordinates are configured
+      if (this.config.coordinates && this.config.coordinates.fullscreen) {
+        const coords = this.config.coordinates.fullscreen;
+        await this.page.mouse.click(coords.x, coords.y);
+        console.log(`Clicked fullscreen at coordinates (${coords.x}, ${coords.y})`);
+      } else {
+        // Fallback to JavaScript fullscreen API
+        await this.page.evaluate(() => {
+          const video = document.querySelector('video');
+          if (video) {
+            if (video.requestFullscreen) {
+              video.requestFullscreen();
+            } else if (video.webkitRequestFullscreen) {
+              video.webkitRequestFullscreen();
+            } else if (video.msRequestFullscreen) {
+              video.msRequestFullscreen();
+            }
           }
-        }
 
-        // Also try document fullscreen
-        if (document.documentElement.requestFullscreen) {
-          document.documentElement.requestFullscreen();
-        } else if (document.documentElement.webkitRequestFullscreen) {
-          document.documentElement.webkitRequestFullscreen();
-        } else if (document.documentElement.msRequestFullscreen) {
-          document.documentElement.msRequestFullscreen();
-        }
-      });
+          // Also try document fullscreen
+          if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen();
+          } else if (document.documentElement.webkitRequestFullscreen) {
+            document.documentElement.webkitRequestFullscreen();
+          } else if (document.documentElement.msRequestFullscreen) {
+            document.documentElement.msRequestFullscreen();
+          }
+        });
+      }
 
       console.log('Entered fullscreen mode');
     } catch (error) {
@@ -164,12 +249,20 @@ class VeoDongleRaspberryPi {
 
   async playStream() {
     try {
-      await this.page.evaluate(() => {
-        const video = document.querySelector('video');
-        if (video && video.paused) {
-          video.play();
-        }
-      });
+      // Use coordinate-based clicking if coordinates are configured
+      if (this.config.coordinates && this.config.coordinates.playback) {
+        const coords = this.config.coordinates.playback;
+        await this.page.mouse.click(coords.x, coords.y);
+        console.log(`Clicked play at coordinates (${coords.x}, ${coords.y})`);
+      } else {
+        // Fallback to HTML5 video API
+        await this.page.evaluate(() => {
+          const video = document.querySelector('video');
+          if (video && video.paused) {
+            video.play();
+          }
+        });
+      }
       console.log('Stream playback started');
     } catch (error) {
       console.error('Error playing stream:', error);
@@ -179,12 +272,20 @@ class VeoDongleRaspberryPi {
 
   async pauseStream() {
     try {
-      await this.page.evaluate(() => {
-        const video = document.querySelector('video');
-        if (video && !video.paused) {
-          video.pause();
-        }
-      });
+      // Use coordinate-based clicking if coordinates are configured
+      if (this.config.coordinates && this.config.coordinates.playback) {
+        const coords = this.config.coordinates.playback;
+        await this.page.mouse.click(coords.x, coords.y);
+        console.log(`Clicked pause at coordinates (${coords.x}, ${coords.y})`);
+      } else {
+        // Fallback to HTML5 video API
+        await this.page.evaluate(() => {
+          const video = document.querySelector('video');
+          if (video && !video.paused) {
+            video.pause();
+          }
+        });
+      }
       console.log('Stream playback paused');
     } catch (error) {
       console.error('Error pausing stream:', error);
@@ -275,11 +376,65 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
-// Start the application
+// Command-line usage
+function printUsage() {
+  console.log(`
+Veo Dongle Raspberry Pi - Stream Player
+
+Usage:
+  node src/index.js [stream-url] [options]
+
+Arguments:
+  stream-url    URL of the veo stream to play (optional, uses config if not provided)
+
+Options:
+  --help, -h    Show this help message
+  --version, -v Show version information
+
+Configuration:
+  The application looks for configuration in this order:
+  1. config.json (JSON format with your coordinate settings)
+  2. config.js (JavaScript format)
+  3. config.example.js (fallback example)
+
+Examples:
+  node src/index.js https://example.com/stream
+  node src/index.js  # Uses URL from config.json
+  node src/index.js --help
+
+API Endpoints:
+  GET  /health           # Health check
+  POST /control/play     # Start playback
+  POST /control/pause    # Pause playback
+  POST /control/fullscreen # Toggle fullscreen
+
+WebSocket Events:
+  play, pause, fullscreen - Control commands
+`);
+}
+
+// Handle command line arguments
 if (require.main === module) {
+  // Check for help flag
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    printUsage();
+    process.exit(0);
+  }
+
+  // Check for version flag
+  if (process.argv.includes('--version') || process.argv.includes('-v')) {
+    const packageInfo = require('../package.json');
+    console.log(`Veo Dongle Raspberry Pi v${packageInfo.version}`);
+    process.exit(0);
+  }
+
+  // Start the application
   const veoDongle = new VeoDongleRaspberryPi();
   global.veoDongleInstance = veoDongle;
-  veoDongle.start();
+  veoDongle.start().catch(error => {
+    console.error('Failed to start Veo Dongle:', error);
+    process.exit(1);
+  });
 }
 
 module.exports = VeoDongleRaspberryPi;

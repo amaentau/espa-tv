@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
+    "play": "node src/index.js",
+    "help": "node src/index.js --help",
+    "version": "node src/index.js --version",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {

@@ -117,10 +117,12 @@ npm run ios
 
 The Raspberry Pi component:
 - Launches Chromium in kiosk mode
-- Loads the specified Veo stream URL
+- Loads and displays Veo streams
+- Supports coordinate-based UI interaction (from your existing config)
 - Automatically enters fullscreen mode
 - Provides local HTTP API for control
 - Supports WebSocket connections for real-time control
+- Uses JSON configuration files (compatible with your existing setup)
 
 ### Local Control API
 
@@ -131,8 +133,44 @@ POST /control/pause    # Pause stream
 POST /control/fullscreen # Toggle fullscreen
 ```
 
+### Command Line Usage
+
+```bash
+# Start with stream URL from config.json
+npm run play
+
+# Start with specific stream URL
+npm run play https://your-stream-url.com
+
+# Show help
+npm run help
+
+# Show version
+npm run version
+```
+
 ### Configuration Options
 
+The Raspberry Pi component supports both JSON and JavaScript configuration files:
+
+#### JSON Configuration (config.json)
+```json
+{
+  "veoStreamUrl": "https://your-veo-stream.com",
+  "port": 3000,
+  "coordinates": {
+    "fullscreen": { "x": 1765, "y": 1045 },
+    "playback": { "x": 45, "y": 1052 },
+    "click": { "x": 100, "y": 100 }
+  },
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  }
+}
+```
+
+#### JavaScript Configuration (config.js)
 ```javascript
 {
   streamUrl: "https://your-veo-stream.com",

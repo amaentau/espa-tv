@@ -11,6 +11,8 @@
     "start:raspberry": "cd raspberry-pi && npm start",
     "start:cloud": "cd cloud && npm start",
     "start:mobile": "cd mobile && npm start",
+    "play": "cd raspberry-pi && npm run play",
+    "help": "cd raspberry-pi && npm run help",
     "dev:raspberry": "cd raspberry-pi && npm run dev",
     "dev:cloud": "cd cloud && npm run dev",
     "dev:mobile": "cd mobile && npm run dev",
