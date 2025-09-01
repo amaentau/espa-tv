@@ -1,0 +1,38 @@
+{
+  "name": "veo-dongle",
+  "version": "1.0.0",
+  "description": "Multi-platform system for Veo stream playback and control",
+  "main": "index.js",
+  "scripts": {
+    "install:all": "npm run install:raspberry && npm run install:cloud && npm run install:mobile",
+    "install:raspberry": "cd raspberry-pi && npm install",
+    "install:cloud": "cd cloud && npm install",
+    "install:mobile": "cd mobile && npm install",
+    "start:raspberry": "cd raspberry-pi && npm start",
+    "start:cloud": "cd cloud && npm start",
+    "start:mobile": "cd mobile && npm start",
+    "dev:raspberry": "cd raspberry-pi && npm run dev",
+    "dev:cloud": "cd cloud && npm run dev",
+    "dev:mobile": "cd mobile && npm run dev",
+    "build:mobile": "cd mobile && react-native bundle",
+    "test:all": "npm run test:raspberry && npm run test:cloud && npm run test:mobile",
+    "test:raspberry": "cd raspberry-pi && npm test",
+    "test:cloud": "cd cloud && npm test",
+    "test:mobile": "cd mobile && npm test",
+    "lint:all": "npm run lint:raspberry && npm run lint:cloud && npm run lint:mobile",
+    "lint:raspberry": "cd raspberry-pi && npm run lint",
+    "lint:cloud": "cd cloud && npm run lint",
+    "lint:mobile": "cd mobile && npm run lint"
+  },
+  "workspaces": [
+    "raspberry-pi",
+    "cloud",
+    "mobile"
+  ],
+  "keywords": ["veo", "stream", "raspberry-pi", "mobile", "cloud"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^7.6.0"
+  }
+}
