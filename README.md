@@ -1,4 +1,380 @@
-# Veo Dongle
+# Veo Dongle (Clean)
+
+This repository includes only the parts required to run and publish a clean version of the project:
+
+- `bbs/`: Azure App Service bulletin board (Express + Azure Table Storage)
+- `raspberry-pi/`: Node.js app that fetches the latest Veo stream from the BBS and opens it in Chromium on a Raspberry Pi
+
+All legacy/experimental components and local binaries are removed or ignored.
+
+## Quick start
+
+### Azure BBS service (`bbs/`)
+```bash
+cd bbs
+npm install
+
+# Required env vars
+export STORAGE_CONNECTION_STRING="<your-azure-storage-connection-string>"
+export TABLE_NAME="bbsEntries"   # optional, defaults to bbsEntries
+
+# Run locally
+npm start
+
+# Deploy (example)
+bash deploy-azure.sh   # or deploy with your preferred Azure method
+```
+
+Endpoints:
+- `POST /entry` — write `{ key, value1, value2 }`
+- `GET  /entries/:key` — read latest entries for a key (newest first)
+
+### Raspberry Pi app (`raspberry-pi/`)
+```bash
+cd raspberry-pi
+npm install
+
+# Configure BBS URL in config (see config.example.js)
+# azure.bbsUrl: e.g. https://<your-app>.azurewebsites.net
+
+# Run
+./run.sh      # or: node src/index.js
+```
+
+Notes:
+- `raspberry-pi/config.json` is intentionally ignored; use `config.example.js` as a template
+- First request to a Free-tier Azure App may be slow while the app wakes up
+
+## Repository structure
+```
+./
+├─ bbs/            # Azure bulletin board service
+├─ raspberry-pi/   # Raspberry Pi viewer/launcher
+└─ docs/           # Documentation
+```
+
+## Security
+- Never commit credentials or local config. The repo ignores `raspberry-pi/config.json` and common secret files.
+- Provide secrets via environment variables or local, ignored files.
+
+## License
+MIT
+
+---
+
+# Veo Dongle - Cleaned Workspace
+
+This repo is focused on two active components:
+
+- bbs/ — Azure App Service + Azure Table Storage bulletin board
+- raspberry-pi/ — Node.js + Puppeteer app for playback on Raspberry Pi
+
+Legacy and experimental components were moved to archive/legacy/.
+
+Root npm scripts were simplified to only bbs and raspberry-pi.
+
+---
+
+Legacy documentation below:
+
+# Veo Dongle - Complete IoT Streaming Solution
+
+A comprehensive IoT solution for streaming Veo content with cloud-based device management and mobile control.
+
+## 🏗️ Architecture Overview
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Mobile App    │    │   Cloud Service │    │ Raspberry Pi    │
+│  (React Native) │◄──►│    (Azure)      │◄──►│   (Device)      │
+│                 │    │                 │    │                 │
+│ • Device Discovery│   │ • Device Mgmt    │   │ • Stream Player │
+│ • URL Input      │   │ • Command Routing │   │ • Auto Fullscreen│
+│ • Remote Control │   │ • Real-time Comm  │   │ • Cloud Reg     │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+## 🚀 Quick Start
+
+### 1. Deploy Cloud Service (Azure)
+
+```bash
+# Navigate to cloud directory
+cd cloud
+
+# Generate Azure deployment files
+node azure-deploy.js
+
+# Deploy to Azure (choose one method):
+# Method 1: PowerShell (Windows)
+.\deploy-azure.ps1 -ResourceGroupName "veo-dongle-rg" -AppServiceName "veo-dongle-cloud"
+
+# Method 2: Bash (Linux/Mac)
+bash deploy-azure.sh
+
+# Method 3: Manual Azure CLI
+az webapp up --name veo-dongle-cloud --resource-group veo-dongle-rg --location "East US"
+```
+
+### 2. Configure Raspberry Pi
+
+```bash
+# Install dependencies
+cd raspberry-pi
+npm install
+
+# Set cloud service URL
+export CLOUD_URL="https://your-azure-app.azurewebsites.net"
+export DEVICE_ID="raspberry-pi-001"
+
+# Run with cloud registration
+./run.sh
+```
+
+### 3. Mobile App Setup
+
+```bash
+# Install dependencies
+cd mobile
+npm install
+
+# Update cloud service URL in DeviceService.js
+# Change: this.baseUrl = 'http://localhost:4000';
+# To: this.baseUrl = 'https://your-azure-app.azurewebsites.net';
+
+# Run the app
+npm run android  # or npm run ios
+```
+
+## 📱 Mobile App Features
+
+### Device Discovery
+- Automatically discovers Raspberry Pi devices via cloud service
+- Real-time device status monitoring
+- Pull-to-refresh device list
+
+### Stream URL Management
+- Dedicated screen for entering Veo stream URLs
+- URL validation and error handling
+- Example URL pre-fill option
+- Send URLs to devices with automatic playback
+
+### Device Control
+- Play/Pause controls
+- Fullscreen toggle
+- Real-time status updates
+- Connection status indicators
+
+## ☁️ Cloud Service Features
+
+### Device Management
+- Device registration and discovery
+- Real-time device status tracking
+- Command routing between mobile and devices
+
+### API Endpoints
+```
+GET  /health           # Service health check
+GET  /devices          # List all devices
+GET  /devices/:id/status # Get device status
+POST /control/:id/play # Send play command
+POST /control/:id/pause # Send pause command
+POST /control/:id/fullscreen # Send fullscreen command
+POST /control/:id/stream # Send Veo URL for streaming
+```
+
+### WebSocket Events
+- `register` - Device registration
+- `mobile-command` - Commands from mobile app
+- `stream-url` - Stream URL updates
+- `status` - Device status updates
+
+## 🍓 Raspberry Pi Features
+
+### Automatic Streaming
+- Login detection and authentication
+- Stream URL navigation with retry logic
+- Automatic fullscreen activation
+- Intelligent playback start
+
+### Cloud Integration
+- Auto-registration with cloud service
+- Real-time command handling
+- Dynamic stream URL updates
+- Status reporting
+
+### Robust Control
+- Multiple fullscreen methods (coordinates, JS API, browser)
+- Multiple playback methods (coordinates, HTML5 video, buttons)
+- Error handling and fallback mechanisms
+- WebSocket server for local control
+
+## 🔧 Configuration
+
+### Environment Variables
+
+#### Cloud Service
+```bash
+NODE_ENV=production
+PORT=8080
+MONGODB_URI=mongodb://localhost:27017/veo-dongle
+```
+
+#### Raspberry Pi
+```bash
+CLOUD_URL=https://your-azure-app.azurewebsites.net
+DEVICE_ID=raspberry-pi-001
+PORT=3000
+VEO_STREAM_URL=https://live.veo.co/stream/...
+```
+
+### Config Files
+
+#### Raspberry Pi Config (`config.json`)
+```json
+{
+  "veoStreamUrl": "https://live.veo.co/stream/...",
+  "port": 3000,
+  "cloudUrl": "http://localhost:4000",
+  "login": {
+    "url": "https://live.veo.co/login",
+    "enabled": true
+  },
+  "coordinates": {
+    "fullscreen": { "x": 1765, "y": 1045 },
+    "playback": { "x": 45, "y": 1052 }
+  }
+}
+```
+
+## 🔐 Security Features
+
+- HTTPS support for cloud service
+- Device authentication
+- CORS protection
+- Helmet.js security headers
+- Input validation and sanitization
+
+## 📊 Monitoring & Logging
+
+- Real-time device status monitoring
+- Comprehensive error logging
+- Health check endpoints
+- Connection status tracking
+- Command execution feedback
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**Mobile App Can't Find Devices:**
+- Check cloud service URL in DeviceService.js
+- Ensure cloud service is running and accessible
+- Verify Raspberry Pi is registered with cloud
+
+**Stream Won't Start:**
+- Check credentials.json is properly formatted
+- Verify Veo URL is valid and accessible
+- Check browser console for Puppeteer errors
+
+**Cloud Service Connection Issues:**
+- Verify Azure deployment completed successfully
+- Check firewall settings
+- Review Azure App Service logs
+
+### Debug Mode
+
+Enable debug logging:
+```bash
+# Raspberry Pi
+DEBUG=* ./run.sh
+
+# Cloud Service
+DEBUG=* npm start
+```
+
+## 🚀 Deployment Options
+
+### Azure App Service (Recommended)
+- Free tier available
+- Auto-scaling
+- Built-in monitoring
+- Global CDN
+
+### Docker Deployment
+```bash
+# Build and run cloud service
+docker build -t veo-dongle-cloud .
+docker run -p 4000:8080 veo-dongle-cloud
+
+# Raspberry Pi with Docker
+docker build -t veo-dongle-pi .
+docker run --privileged veo-dongle-pi
+```
+
+### Local Development
+```bash
+# Start cloud service
+cd cloud && npm start
+
+# Start Raspberry Pi (new terminal)
+cd raspberry-pi && ./run.sh
+
+# Start mobile app (new terminal)
+cd mobile && npm run android
+```
+
+## 📝 API Reference
+
+### Mobile App API
+```javascript
+import DeviceService from './services/DeviceService';
+
+// Connect to cloud
+await DeviceService.connect();
+
+// Get devices
+const devices = await DeviceService.getDevices();
+
+// Send command
+await DeviceService.sendCommand(deviceId, 'play');
+
+// Send stream URL
+await DeviceService.sendCommand(deviceId, 'stream', { veoUrl: 'https://...' });
+```
+
+### Device Control API
+```javascript
+// Direct device control (when connected locally)
+fetch('http://raspberry-pi:3000/control/play', { method: 'POST' });
+
+// Via cloud service
+fetch('https://your-cloud.azurewebsites.net/control/device-123/play', { method: 'POST' });
+```
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## 📄 License
+
+MIT License - see LICENSE file for details.
+
+## 🆘 Support
+
+For issues and questions:
+1. Check the troubleshooting section
+2. Review Azure App Service logs
+3. Check device console output
+4. Open an issue on GitHub
+
+---
+
+**🎯 Your Veo Dongle system is now ready for seamless streaming control!**
 
 A multi-platform system for Veo stream playback and remote control, consisting of:
 
