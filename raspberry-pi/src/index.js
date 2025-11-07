@@ -50,7 +50,8 @@ class VeoDongleRaspberryPi {
     this.enableClickOverlay = process.env.SHOW_CLICK_OVERLAY ? (process.env.SHOW_CLICK_OVERLAY === 'true') : true;
 
     // Override with command line arguments if provided
-    this.streamUrl = process.argv[2] || this.config.veoStreamUrl || process.env.VEO_STREAM_URL || 'https://example.com/veo-stream';
+    // Stream URL is always resolved from BBS; initialized as null until fetched
+    this.streamUrl = null;
     this.port = process.env.PORT || this.config.port || 3000;
 
     // Coordinate-based control map (CSS pixel coordinates)
@@ -1373,10 +1374,12 @@ function printUsage() {
 Veo Dongle Raspberry Pi - Stream Player
 
 Usage:
-  node src/index.js [stream-url] [options]
+  node src/index.js [options]
 
-Arguments:
-  stream-url    URL of the veo stream to play (optional, uses config if not provided)
+Stream URL:
+  The stream URL is always read from the BBS service configured in config.json
+  under azure.bbsUrl. The key defaults to the BBS_KEY environment variable or
+  falls back to "koti" if not set.
 
 Options:
   --help, -h    Show this help message
@@ -1389,8 +1392,7 @@ Configuration:
   3. config.example.js (fallback example)
 
 Examples:
-  node src/index.js https://example.com/stream
-  node src/index.js  # Uses URL from config.json
+  node src/index.js
   node src/index.js --help
 
 API Endpoints:
