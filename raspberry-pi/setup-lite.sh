@@ -121,7 +121,22 @@ detect_drm_device() {
 
   local -a sorted_cards
   mapfile -t sorted_cards < <(printf '%s\n' "${drm_files[@]}" | sort)
-  DRM_DEVICE="${sorted_cards[0]}"
+
+  for card in "${sorted_cards[@]}"; do
+    if [[ -r "${card}/device/uevent" ]]; then
+      local driver
+      driver="$(grep -E '^DRIVER=' "${card}/device/uevent" | cut -d'=' -f2-)"
+      if [[ "${driver}" == vc4* ]]; then
+        DRM_DEVICE="${card}"
+        break
+      fi
+    fi
+  done
+
+  if [[ -z "${DRM_DEVICE}" ]]; then
+    DRM_DEVICE="${sorted_cards[0]}"
+  fi
+
   info "Detected DRM device ${DRM_DEVICE} for modesetting"
 }
 
