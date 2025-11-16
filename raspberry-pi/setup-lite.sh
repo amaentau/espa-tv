@@ -206,13 +206,10 @@ info "Using Chromium binary at ${CHROMIUM_BIN}"
 info "Configuring Xorg for modesetting displays"
 load_display_config
 mkdir -p /etc/X11/xorg.conf.d
-cat >/etc/X11/xorg.conf.d/99-veo-modesetting.conf <<EOF
+cat >/etc/X11/xorg.conf.d/99-veo-fbdev.conf <<EOF
 Section "Device"
-  Identifier "VeoModesetting"
-  Driver "modesetting"
-  Option "AccelMethod" "glamor"
-  Option "DRI" "3"
-  Option "TearFree" "true"
+  Identifier "VeoFBDEV"
+  Driver "fbdev"
 EndSection
 
 Section "Monitor"
@@ -222,7 +219,7 @@ EndSection
 
 Section "Screen"
   Identifier "Screen0"
-  Device "VeoModesetting"
+  Device "VeoFBDEV"
   Monitor "Monitor0"
   DefaultDepth 24
   SubSection "Display"
@@ -243,14 +240,14 @@ info "Using boot directory: ${BOOT_DIR}"
 
 info "Configuring boot options for an HDMI-first kiosk"
 {
-  grep -q '^hdmi_force_hotplug=1' "${BOOT_CONFIG}" && grep -q '^dtoverlay=vc4-kms-v3d' "${BOOT_CONFIG}"
+  grep -q '^hdmi_force_hotplug=1' "${BOOT_CONFIG}" && grep -q '^dtoverlay=vc4-fkms-v3d' "${BOOT_CONFIG}"
 } || {
   cat >>"${BOOT_CONFIG}" <<'EOF'
 hdmi_force_hotplug=1
 hdmi_group=1
 # Leave hdmi_mode unset so the display can negotiate the native resolution.
 disable_overscan=1
-dtoverlay=vc4-kms-v3d
+dtoverlay=vc4-fkms-v3d
 gpu_mem=256
 
 # Boot optimizations for kiosk
