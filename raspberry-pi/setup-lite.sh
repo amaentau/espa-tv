@@ -14,6 +14,7 @@ DISPLAY_PREFERRED="auto"
 DISPLAY_MODELINE=""
 VIRTUAL_WIDTH=3840
 VIRTUAL_HEIGHT=2160
+DRM_DEVICE=""
 
 info() {
   echo -e "\e[1;34m[INFO]\e[0m $*"
@@ -103,6 +104,27 @@ load_display_config() {
   fi
 
   info "Display config: modes=${DISPLAY_MODES[*]} preferred=${DISPLAY_PREFERRED} virtual=${VIRTUAL_WIDTH}x${VIRTUAL_HEIGHT}"
+}
+
+detect_drm_device() {
+  if [[ -n "${DRM_DEVICE:-}" ]]; then
+    return
+  fi
+
+  local -a drm_files
+  shopt -s nullglob
+  drm_files=(/dev/dri/card*)
+  shopt -u nullglob
+
+  if (( ${#drm_files[@]} == 0 )); then
+    warning "No DRM card devices found under /dev/dri; Xorg may fall back to FBDEV."
+    return
+  fi
+
+  local -a sorted_cards
+  mapfile -t sorted_cards < <(printf '%s\n' "${drm_files[@]}" | sort)
+  DRM_DEVICE="${sorted_cards[0]}"
+  info "Detected DRM device ${DRM_DEVICE} for modesetting"
 }
 
 if [[ $EUID -ne 0 ]]; then
@@ -205,11 +227,26 @@ info "Using Chromium binary at ${CHROMIUM_BIN}"
 
 info "Configuring Xorg for modesetting displays"
 load_display_config
+detect_drm_device
+
+info "Allowing console and service users to start Xorg"
+cat >/etc/X11/Xwrapper.config <<'EOF'
+allowed_users=anybody
+needs_root_rights=yes
+EOF
+
 mkdir -p /etc/X11/xorg.conf.d
-cat >/etc/X11/xorg.conf.d/99-veo-fbdev.conf <<EOF
+DEVICE_KMS_OPTION=""
+if [[ -n "${DRM_DEVICE}" ]]; then
+  DEVICE_KMS_OPTION=$(printf '  Option "kmsdev" "%s"\n' "${DRM_DEVICE}")
+fi
+
+cat >/etc/X11/xorg.conf.d/99-veo-modesetting.conf <<EOF
 Section "Device"
-  Identifier "VeoFBDEV"
-  Driver "fbdev"
+  Identifier "VeoModesetting"
+  Driver "modesetting"
+${DEVICE_KMS_OPTION}  Option "AccelMethod" "glamor"
+  Option "DRI" "3"
 EndSection
 
 Section "Monitor"
@@ -219,7 +256,7 @@ EndSection
 
 Section "Screen"
   Identifier "Screen0"
-  Device "VeoFBDEV"
+  Device "VeoModesetting"
   Monitor "Monitor0"
   DefaultDepth 24
   SubSection "Display"
