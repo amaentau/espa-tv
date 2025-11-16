@@ -407,9 +407,12 @@ RuntimeMaxUse=32M
 RuntimeMaxFileSize=8M
 EOF
 
-  # Configure systemd to skip fsck on boot for faster startup
-  systemctl mask systemd-fsck-root.service 2>/dev/null || true
-  systemctl mask systemd-fsck@.service 2>/dev/null || true
+  # Skip fsck on boot for faster startup by setting kernel parameters
+  # Instead of masking services (which can cause dependency issues), use boot options
+  if ! grep -q "fsck.mode=skip" /boot/cmdline.txt 2>/dev/null; then
+    info "Adding fsck skip to boot parameters for faster startup"
+    sed -i 's/$/ fsck.mode=skip/' /boot/cmdline.txt
+  fi
 
   # Disable unnecessary kernel modules for faster boot
   cat >/etc/modprobe.d/kiosk-blacklist.conf <<'EOF'
@@ -454,9 +457,10 @@ info "Creating systemd unit ${SYSTEMD_UNIT}"
 cat >"${SYSTEMD_UNIT}" <<EOF
 [Unit]
 Description=Veo Dongle Kiosk (Xorg + Chromium)
-After=network-online.target local-fs.target
+After=network-online.target
 Wants=network-online.target
-Requires=local-fs.target
+# Removed local-fs.target dependency to avoid fsck conflicts
+ConditionPathExists=${APP_ROOT}/src/index.js
 
 [Service]
 User=${SERVICE_USER}
@@ -476,6 +480,8 @@ StandardError=journal
 # Reduce memory usage for kiosk
 MemoryLimit=512M
 MemoryAccounting=yes
+# Timeout for startup
+TimeoutStartSec=60
 
 [Install]
 WantedBy=multi-user.target

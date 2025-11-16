@@ -125,6 +125,8 @@ The setup script includes comprehensive boot optimizations for faster kiosk star
 - Reduced service startup timeouts
 - Memory limits (512MB) for the kiosk process
 - Volatile journal storage with size limits
+- Boot-time fsck skipping via kernel parameter `fsck.mode=skip`
+- Network-dependent startup (waits for `network-online.target`)
 
 These optimizations typically reduce boot time from ~45 seconds to ~20-25 seconds on Raspberry Pi 4.
 

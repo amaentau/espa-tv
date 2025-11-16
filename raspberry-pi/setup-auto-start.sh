@@ -130,9 +130,9 @@ create_systemd_service() {
   cat >"${systemd_unit}" <<EOF
 [Unit]
 Description=Veo Dongle Kiosk (Xorg + Chromium)
-After=network-online.target local-fs.target
+After=network-online.target
 Wants=network-online.target
-Requires=local-fs.target
+# Removed local-fs.target dependency to avoid fsck conflicts
 ConditionPathExists=${APP_ROOT}/src/index.js
 
 [Service]
