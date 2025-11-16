@@ -5,8 +5,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_ROOT="${SCRIPT_DIR}"
 SERVICE_USER="dongle"
 SERVICE_HOME="/home/${SERVICE_USER}"
-SERVICE_NAME="veo-dongle-kiosk"
-SYSTEMD_UNIT="/etc/systemd/system/${SERVICE_NAME}.service"
 CONFIG_JSON="${APP_ROOT}/config.json"
 DEFAULT_DISPLAY_MODES=("3840x2160" "1920x1080" "1280x720")
 DISPLAY_MODES=()
@@ -314,45 +312,5 @@ sudo -u "${SERVICE_USER}" env PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=1 npm install --o
 
 chmod +x "${APP_ROOT}/scripts/start-kiosk.sh"
 
-info "Creating systemd unit ${SYSTEMD_UNIT}"
-cat >"${SYSTEMD_UNIT}" <<EOF
-[Unit]
-Description=Veo Dongle Kiosk (Xorg + Chromium)
-After=network-online.target
-Wants=network-online.target
-# Removed local-fs.target dependency to avoid fsck conflicts
-ConditionPathExists=${APP_ROOT}/src/index.js
-
-[Service]
-User=${SERVICE_USER}
-Group=${SERVICE_USER}
-WorkingDirectory=${APP_ROOT}
-Environment=DISPLAY=:0
-Environment=RUNTIME_ENV=raspberry
-Environment=PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=1
-Environment=NODE_ENV=production
-  Environment=CHROMIUM_PATH=${CHROMIUM_BIN}
-Environment=XAUTHORITY=${SERVICE_HOME}/.Xauthority
-ExecStart=/usr/bin/xinit ${APP_ROOT}/scripts/start-kiosk.sh -- :0 -nolisten tcp vt7 -keeptty
-Restart=always
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
-# Reduce memory usage for kiosk
-MemoryLimit=512M
-MemoryAccounting=yes
-# Timeout for startup
-TimeoutStartSec=60
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-info "Reloading systemd and enabling kiosk service"
-systemctl daemon-reload
-systemctl enable "${SERVICE_NAME}.service"
-systemctl restart "${SERVICE_NAME}.service"
-
-success "Setup complete! The kiosk service is running as ${SERVICE_USER}."
-success "Logs: sudo journalctl -f -u ${SERVICE_NAME}.service"
+success "Setup complete! You can launch the kiosk manually via ${APP_ROOT}/scripts/start-kiosk.sh."
 
