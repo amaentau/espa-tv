@@ -8,8 +8,6 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
 
-const CloudService = require('./cloud-service');
-
 class VeoDongleRaspberryPi {
   constructor() {
     this.browser = null;
@@ -19,15 +17,12 @@ class VeoDongleRaspberryPi {
 
     
 
-    // Azure-based cloud service
-    this.cloudService = null;
 
     // Runtime environment helpers
     this.runtimeEnvironment = process.env.RUNTIME_ENV || (this.detectWSL() ? 'wsl' : 'raspberry');
 
     // Load configuration
-    const baseConfig = this.loadConfig();
-    this.config = this.resolveEnvironmentConfig(baseConfig);
+    this.config = this.loadConfig();
     this.displayConfig = this.config.display || {};
     this.logDisplaySummary();
 
@@ -50,121 +45,24 @@ class VeoDongleRaspberryPi {
     this.streamUrl = null;
     this.port = this.config.port || process.env.PORT || 3000;
     this.debug = process.env.DEBUG === 'true';
-
-    // Coordinate-based control map (CSS pixel coordinates)
-    // Keys are base widths; scaling uses current render width
-    this.clickControlMap = {
-      1280: {
-        play: { x: 63, y: 681 },
-        fullscreen: { x: 1136, y: 678 },
-        baseWidth: 1280
-      },
-      1920: {
-        play: { x: 77, y: 1039 },
-        fullscreen: { x: 1759, y: 1041 },
-        baseWidth: 1920
-      },
-      3840: {
-        play: { x: 114, y: 2124 },
-        fullscreen: { x: 3643, y: 2122 },
-        baseWidth: 3840
-      }
-    };
   }
 
   loadConfig() {
     const configDir = path.join(__dirname, '..');
+    const jsonConfigPath = path.join(configDir, 'config.json');
 
-    // Try to load JSON config first
-    try {
-      const jsonConfigPath = path.join(configDir, 'config.json');
-      if (fs.existsSync(jsonConfigPath)) {
-        console.log('Loading JSON configuration from config.json');
-        return JSON.parse(fs.readFileSync(jsonConfigPath, 'utf8'));
-      }
-    } catch (error) {
-      console.warn('Failed to load JSON config:', error.message);
+    if (!fs.existsSync(jsonConfigPath)) {
+      throw new Error(`Configuration file not found: ${jsonConfigPath}. Please create config.json with required settings.`);
     }
 
-    // Fall back to JavaScript config
     try {
-      const jsConfigPath = path.join(configDir, 'config.js');
-      if (fs.existsSync(jsConfigPath)) {
-        console.log('Loading JavaScript configuration from config.js');
-        return require(jsConfigPath);
-      }
+      console.log('Loading JSON configuration from config.json');
+      return JSON.parse(fs.readFileSync(jsonConfigPath, 'utf8'));
     } catch (error) {
-      console.warn('Failed to load JavaScript config:', error.message);
+      throw new Error(`Failed to parse config.json: ${error.message}`);
     }
-
-    // Fall back to example config
-    try {
-      const exampleConfigPath = path.join(configDir, 'config.example.js');
-      if (fs.existsSync(exampleConfigPath)) {
-        console.log('Loading example configuration from config.example.js');
-        return require(exampleConfigPath);
-      }
-    } catch (error) {
-      console.warn('Failed to load example config:', error.message);
-    }
-
-    // Return default configuration
-    console.log('Using default configuration');
-    return {
-      veoStreamUrl: 'https://example.com/veo-stream',
-      port: 3000,
-      deviceId: 'raspberry-pi-001',
-      viewport: { width: 1920, height: 1080 },
-      display: {
-        modes: ['3840x2160', '1920x1080', '1280x720'],
-        preferredMode: 'auto'
-      },
-      chromium: {
-        headless: false,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--start-fullscreen',
-          '--kiosk'
-        ]
-      }
-    };
   }
 
-  resolveEnvironmentConfig(baseConfig = {}) {
-    const configObject = typeof baseConfig === 'object' && baseConfig ? baseConfig : {};
-    const { environments, ...rest } = configObject;
-    const envOverrides = (environments && typeof environments === 'object' && environments[this.runtimeEnvironment]) || {};
-
-    return {
-      ...rest,
-      ...envOverrides,
-      viewport: {
-        ...(rest.viewport || {}),
-        ...(envOverrides.viewport || {})
-      },
-      login: {
-        ...(rest.login || {}),
-        ...(envOverrides.login || {})
-      },
-      azure: {
-        ...(rest.azure || {}),
-        ...(envOverrides.azure || {})
-      },
-      browser: {
-        ...(rest.browser || {}),
-        ...(envOverrides.browser || {})
-      },
-      display: {
-        ...(rest.display || {}),
-        ...(envOverrides.display || {})
-      },
-      coordinates: {
-        ...(rest.coordinates || {}),
-        ...(envOverrides.coordinates || {})
-      }
-    };
-  }
 
   loadCredentials() {
     const credentialsPath = path.join(__dirname, '..', 'credentials.json');
@@ -187,58 +85,7 @@ class VeoDongleRaspberryPi {
     }
   }
 
-  async connectToCloud() {
-    console.log('🌐 Initializing cloud services...');
 
-    try {
-      // Initialize Azure-based cloud service (preferred method)
-      if (this.config.azure && this.config.azure.enabled) {
-        console.log('☁️ Using Azure Table Storage for cloud interaction');
-        this.cloudService = new CloudService(this.config);
-
-        await this.cloudService.initialize();
-
-        // Set up callback for stream URL updates
-        this.cloudService.onStreamUpdate(async (newStreamUrl, metadata) => {
-          console.log(`🎯 Azure cloud requested new stream: ${newStreamUrl}`);
-          await this.updateStreamFromCloud(newStreamUrl, metadata);
-        });
-      } else {
-        console.log('⚠️ No cloud service configured, running in standalone mode');
-      }
-
-      console.log('✅ Cloud services initialized');
-    } catch (error) {
-      console.error('❌ Error setting up cloud connection:', error.message);
-      console.log('⚠️ Continuing without cloud connection...');
-    }
-  }
-
-  async updateStreamFromCloud(newStreamUrl, metadata = {}) {
-    try {
-      console.log(`🎬 Updating stream from cloud: ${newStreamUrl}`);
-
-      // Store the current URL in cloud (for reference)
-      if (this.cloudService) {
-        await this.cloudService.storeStreamUrl(newStreamUrl, {
-          previousUrl: this.streamUrl,
-          source: metadata.source || 'azure',
-          deviceId: this.deviceId
-        });
-      }
-
-      // Update local stream URL
-      this.streamUrl = newStreamUrl;
-
-      // Navigate to the new stream
-      await this.goToStream();
-
-      console.log('✅ Stream updated successfully from cloud');
-    } catch (error) {
-      console.error('❌ Error updating stream from cloud:', error.message);
-      throw error;
-    }
-  }
 
   async initialize() {
     console.log('Initializing Veo Dongle Raspberry Pi...');
@@ -350,9 +197,6 @@ class VeoDongleRaspberryPi {
         isRunning: !!this.browser,
         hasPage: !!this.page
       },
-      cloud: {
-        azureService: this.cloudService ? this.cloudService.getStatus() : null
-      }
     };
   }
 
@@ -394,7 +238,7 @@ class VeoDongleRaspberryPi {
       currentWidth = (this.config.viewport && this.config.viewport.width) || 1920;
     }
 
-    const bases = Object.keys(this.clickControlMap).map(n => parseInt(n, 10)).sort((a, b) => a - b);
+    const bases = Object.keys(this.config.coordinates || {}).map(n => parseInt(n, 10)).sort((a, b) => a - b);
     let chosenWidth = bases[0];
     let minDiff = Math.abs(currentWidth - bases[0]);
     for (const bw of bases) {
@@ -402,7 +246,7 @@ class VeoDongleRaspberryPi {
       if (d < minDiff) { minDiff = d; chosenWidth = bw; }
     }
 
-    const ref = this.clickControlMap[chosenWidth];
+    const ref = this.config.coordinates[chosenWidth];
     const base = ref && ref[action];
     if (!base) throw new Error(`No coordinates for action '${action}'`);
 
@@ -489,143 +333,8 @@ class VeoDongleRaspberryPi {
       res.json({ status: 'ok', timestamp: new Date().toISOString() });
     });
 
-    // Cloud management endpoints
-    this.setupCloudEndpoints();
   }
 
-  setupCloudEndpoints() {
-    // Get cloud service status
-    this.app.get('/cloud/status', (req, res) => {
-      const status = this.cloudService ? this.cloudService.getStatus() : {
-        enabled: false,
-        initialized: false,
-        message: 'Cloud service not available'
-      };
-
-      res.json({
-        cloud: status,
-        currentStreamUrl: this.streamUrl,
-        deviceId: this.deviceId
-      });
-    });
-
-    // Update stream URL via API
-    this.app.post('/cloud/stream', async (req, res) => {
-      try {
-        const { streamUrl } = req.body;
-
-        if (!streamUrl) {
-          return res.status(400).json({
-            success: false,
-            error: 'streamUrl is required'
-          });
-        }
-
-        console.log(`🌐 API requested new stream: ${streamUrl}`);
-        await this.updateStreamFromCloud(streamUrl, { source: 'api' });
-
-        res.json({
-          success: true,
-          streamUrl,
-          message: 'Stream URL updated successfully'
-        });
-      } catch (error) {
-        console.error('❌ Error updating stream from API:', error.message);
-        res.status(500).json({
-          success: false,
-          error: error.message
-        });
-      }
-    });
-
-    // Store stream URL in cloud (for Azure Table Storage)
-    this.app.post('/cloud/store', async (req, res) => {
-      try {
-        const { streamUrl } = req.body;
-
-        if (!streamUrl) {
-          return res.status(400).json({
-            success: false,
-            error: 'streamUrl is required'
-          });
-        }
-
-        if (!this.cloudService) {
-          return res.status(503).json({
-            success: false,
-            error: 'Azure Table Storage not available'
-          });
-        }
-
-        const result = await this.cloudService.storeStreamUrl(streamUrl, {
-          source: 'api',
-          deviceId: this.deviceId
-        });
-
-        res.json({
-          success: true,
-          streamUrl,
-          timestamp: result.timestamp,
-          message: 'Stream URL stored in cloud successfully'
-        });
-      } catch (error) {
-        console.error('❌ Error storing stream URL in cloud:', error.message);
-        res.status(500).json({
-          success: false,
-          error: error.message
-        });
-      }
-    });
-
-    // Get latest stream URL from cloud
-    this.app.get('/cloud/latest', async (req, res) => {
-      try {
-        if (!this.cloudService) {
-          return res.status(503).json({
-            success: false,
-            error: 'Azure Table Storage not available'
-          });
-        }
-
-        const key = req.query.key || null;
-        const latestEntry = await this.cloudService.getLatestStreamUrl(key);
-
-        res.json({
-          success: true,
-          key: key || this.deviceId,
-          streamUrl: latestEntry ? latestEntry.streamUrl : null,
-          timestamp: latestEntry ? latestEntry.timestamp : null,
-          message: latestEntry ? 'Latest stream URL retrieved' : 'No stream URLs found'
-        });
-      } catch (error) {
-        console.error('❌ Error retrieving latest stream URL:', error.message);
-        res.status(500).json({
-          success: false,
-          error: error.message
-        });
-      }
-    });
-
-    // Manual cloud sync trigger
-    this.app.post('/cloud/sync', async (req, res) => {
-      try {
-        if (this.cloudService) {
-          await this.cloudService.checkForUpdates();
-        }
-
-        res.json({
-          success: true,
-          message: 'Cloud sync triggered'
-        });
-      } catch (error) {
-        console.error('❌ Error during cloud sync:', error.message);
-        res.status(500).json({
-          success: false,
-          error: error.message
-        });
-      }
-    });
-  }
 
   async launchBrowser() {
     console.log('🚀 Launching Chromium...');
@@ -645,27 +354,24 @@ class VeoDongleRaspberryPi {
       collectArgs.push(arg);
     };
 
+    // Essential flags for kiosk mode on Raspberry Pi and WSL
     const defaultChromiumArgs = [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--no-first-run',
-      '--no-zygote',
+      '--kiosk',
+      '--start-fullscreen',
       '--disable-infobars',
       '--disable-web-security',
-      '--disable-accelerated-2d-canvas',
       '--autoplay-policy=no-user-gesture-required',
-      '--disable-background-timer-throttling',
-      '--disable-backgrounding-occluded-windows',
-      '--disable-renderer-backgrounding',
-      '--disable-features=VizDisplayCompositor',
-      '--disable-extensions-http-throttling',
-      '--disable-ipc-flooding-protection',
-      '--ignore-certificate-errors',
-      '--kiosk',
-      '--start-fullscreen'
+      '--ignore-certificate-errors'
     ];
+
+    // Add environment-specific flags
+    if (this.runtimeEnvironment === 'wsl') {
+      defaultChromiumArgs.push('--disable-features=VizDisplayCompositor');
+      defaultChromiumArgs.push('--no-zygote');
+    }
 
     defaultChromiumArgs.forEach(pushArg);
 
@@ -780,8 +486,7 @@ class VeoDongleRaspberryPi {
       explicitPath,
       '/usr/bin/chromium-browser',
       '/usr/bin/chromium',
-      '/usr/bin/google-chrome-stable',
-      '/snap/bin/chromium'
+      '/usr/bin/google-chrome-stable'
     ].filter(Boolean);
 
     for (const candidate of candidates) {
