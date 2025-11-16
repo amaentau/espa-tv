@@ -199,39 +199,81 @@ else
 fi
 
 info "Installing Chromium runtime dependencies"
-apt-get install -y \
-  libnss3 \
-  libatk-bridge2.0-0 \
-  libatk1.0-0 \
-  libcups2 \
-  libdbus-1-3 \
-  libdrm2 \
-  libgbm1 \
-  libgdk-pixbuf2.0-0 \
-  libglib2.0-0 \
-  libgtk-3-0 \
-  libx11-6 \
-  libx11-xcb1 \
-  libxcomposite1 \
-  libxcursor1 \
-  libxdamage1 \
-  libxext6 \
-  libxfixes3 \
-  libxi6 \
-  libxrandr2 \
-  libxrender1 \
-  libxss1 \
-  libxtst6 \
-  libxkbcommon0 \
-  libasound2 \
-  libappindicator3-1 \
-  fontconfig \
-  fonts-liberation \
-  fonts-dejavu-core \
-  libpango-1.0-0 \
-  libpangocairo-1.0-0 \
-  libsystemd0 \
+# Try to install packages, handling different naming conventions between OS versions
+PACKAGES=(
+  libnss3
+  libatk-bridge2.0-0
+  libatk1.0-0
+  libcups2
+  libdbus-1-3
+  libdrm2
+  libgbm1
+  libglib2.0-0
+  libgtk-3-0
+  libx11-6
+  libx11-xcb1
+  libxcomposite1
+  libxcursor1
+  libxdamage1
+  libxext6
+  libxfixes3
+  libxi6
+  libxrandr2
+  libxrender1
+  libxss1
+  libxtst6
+  libxkbcommon0
+  libasound2
+  libappindicator3-1
+  fontconfig
+  fonts-liberation
+  fonts-dejavu-core
+  libpango-1.0-0
+  libpangocairo-1.0-0
+  libsystemd0
   libstdc++6
+)
+
+# Function to add package with alternatives
+add_package_with_alternatives() {
+  local primary="$1"
+  shift
+  local alternatives=("$@")
+
+  # Try primary package first
+  if apt-cache show "$primary" >/dev/null 2>&1; then
+    PACKAGES+=("$primary")
+    return 0
+  fi
+
+  # Try alternatives
+  for alt in "${alternatives[@]}"; do
+    if apt-cache show "$alt" >/dev/null 2>&1; then
+      PACKAGES+=("$alt")
+      info "Using alternative package: $alt (instead of $primary)"
+      return 0
+    fi
+  done
+
+  warning "No compatible package found for: $primary (tried: $primary ${alternatives[*]})"
+  return 1
+}
+
+# Try different variations of gdk-pixbuf package
+add_package_with_alternatives "libgdk-pixbuf2.0-0" "libgdk-pixbuf-2.0-0" "libgdk-pixbuf2.0" "libgdk-pixbuf-2.0"
+
+# Check other potentially problematic packages
+add_package_with_alternatives "libatk-bridge2.0-0" "libatk-bridge2.0"
+add_package_with_alternatives "libatk1.0-0" "libatk1.0"
+add_package_with_alternatives "libxkbcommon0" "libxkbcommon"
+
+# Install all packages with error handling
+info "Installing ${#PACKAGES[@]} packages..."
+if ! apt-get install -y "${PACKAGES[@]}"; then
+  error "Failed to install some packages. This may affect Chromium functionality."
+  error "You can try running: sudo apt-get update && sudo apt-get install -f"
+  warning "Continuing with setup, but Chromium may not work correctly."
+fi
 
 CHROMIUM_CANDIDATE="$(command -v chromium-browser || command -v chromium || true)"
 if [[ -z "${CHROMIUM_CANDIDATE}" ]]; then

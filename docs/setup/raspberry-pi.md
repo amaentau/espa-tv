@@ -53,6 +53,38 @@ cd /home/dongle/veo_dongle/raspberry-pi
 sudo ./setup-lite.sh
 ```
 
+### Alternative: Auto-Start Setup Only
+
+If you prefer to focus only on automatic startup configuration (after manually installing dependencies), use the dedicated auto-start script:
+
+```bash
+# After installing dependencies manually, run:
+sudo ./setup-auto-start.sh
+```
+
+This script:
+- Verifies it's running on Raspberry Pi hardware (exits with error on development environments)
+- Creates the `dongle` service user if needed
+- Sets up systemd service that waits for network connectivity
+- Provides monitoring and management tools (`manage-service.sh`)
+- Configures automatic startup after both boot and internet availability
+
+The script creates a management script (`manage-service.sh`) with commands for monitoring and controlling the service:
+
+```bash
+# Check status and network connectivity
+./manage-service.sh status
+
+# View live logs
+./manage-service.sh logs
+
+# Restart service
+./manage-service.sh restart
+
+# Run diagnostics
+./manage-service.sh diagnose
+```
+
 After the script completes the kiosk service is enabled automatically:
 
 ```bash
@@ -66,6 +98,8 @@ sudo journalctl -f -u veo-dongle-kiosk.service
 The `environments` block inside `config.json` holds overrides for `raspberry` (production) and `wsl` (development). The `raspberry` overrides enable EGL-based GPU hints and keep the full-screen Chromium flags used by the kiosk; the WSL overrides shrink the viewport and add SwiftShader/ANGLE fallbacks so the browser launches inside Windows. The systemd service exports `RUNTIME_ENV=raspberry`, so Node.js merges the Raspberry-specific overrides automatically while running on the Pi.
 
 The setup script automatically installs `jq` for JSON parsing (required for reading display configuration from `config.json`). If `jq` is not available in the default repositories, the script will attempt to install it from Debian backports or download a static binary for ARM64 architectures.
+
+The script also handles different package naming conventions between Raspberry Pi OS versions. For example, some packages like `libgdk-pixbuf2.0-0` may have different names in different OS versions - the script automatically detects and uses the correct package names for your system.
 
 If you change the source tree later, run `sudo -u dongle npm install --omit=dev` before restarting `veo-dongle-kiosk.service`.
 
