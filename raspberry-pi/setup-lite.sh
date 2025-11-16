@@ -262,16 +262,41 @@ add_package_with_alternatives() {
 # Try different variations of gdk-pixbuf package
 add_package_with_alternatives "libgdk-pixbuf2.0-0" "libgdk-pixbuf-2.0-0" "libgdk-pixbuf2.0" "libgdk-pixbuf-2.0"
 
-# Check other potentially problematic packages
+# Check other potentially problematic packages that may have naming differences across OS versions
 add_package_with_alternatives "libatk-bridge2.0-0" "libatk-bridge2.0"
 add_package_with_alternatives "libatk1.0-0" "libatk1.0"
+add_package_with_alternatives "libglib2.0-0" "libglib2.0"
+add_package_with_alternatives "libgtk-3-0" "libgtk-3"
+add_package_with_alternatives "libpango-1.0-0" "libpango-1.0"
+add_package_with_alternatives "libpangocairo-1.0-0" "libpangocairo-1.0"
+add_package_with_alternatives "libsystemd0" "libsystemd"
 add_package_with_alternatives "libxkbcommon0" "libxkbcommon"
+add_package_with_alternatives "libappindicator3-1" "libappindicator3"
 
 # Install all packages with error handling
 info "Installing ${#PACKAGES[@]} packages..."
-if ! apt-get install -y "${PACKAGES[@]}"; then
-  error "Failed to install some packages. This may affect Chromium functionality."
-  error "You can try running: sudo apt-get update && sudo apt-get install -f"
+if apt-get install -y "${PACKAGES[@]}"; then
+  success "All packages installed successfully"
+else
+  # Try to identify which packages might have failed
+  warning "Some packages may have failed to install. Checking individual packages..."
+  FAILED_PACKAGES=()
+  for pkg in "${PACKAGES[@]}"; do
+    if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+      FAILED_PACKAGES+=("$pkg")
+    fi
+  done
+
+  if [[ ${#FAILED_PACKAGES[@]} -gt 0 ]]; then
+    warning "The following packages failed to install: ${FAILED_PACKAGES[*]}"
+    warning "This may affect Chromium functionality. You can try:"
+    warning "  sudo apt-get update"
+    warning "  sudo apt-get install -f"
+    warning "  sudo apt-get install ${FAILED_PACKAGES[*]}"
+  else
+    warning "Package installation reported failure but all packages appear to be installed."
+  fi
+
   warning "Continuing with setup, but Chromium may not work correctly."
 fi
 

@@ -101,6 +101,8 @@ The setup script automatically installs `jq` for JSON parsing (required for read
 
 The script also handles different package naming conventions between Raspberry Pi OS versions. For example, some packages like `libgdk-pixbuf2.0-0` may have different names in different OS versions - the script automatically detects and uses the correct package names for your system.
 
+The script includes comprehensive package compatibility checking for all Chromium runtime dependencies, with fallback alternatives for packages that commonly change names between Debian/Raspbian versions (Buster, Bullseye, Bookworm). If package installation fails, the script provides detailed diagnostics about which specific packages failed and suggests recovery commands.
+
 If you change the source tree later, run `sudo -u dongle npm install --omit=dev` before restarting `veo-dongle-kiosk.service`.
 
 ### Boot Optimizations
