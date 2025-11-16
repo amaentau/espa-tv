@@ -103,6 +103,8 @@ The script also handles different package naming conventions between Raspberry P
 
 The script includes comprehensive package compatibility checking for all Chromium runtime dependencies, with fallback alternatives for packages that commonly change names between Debian/Raspbian versions (Buster, Bullseye, Bookworm). If package installation fails, the script provides detailed diagnostics about which specific packages failed and suggests recovery commands.
 
+The setup also properly configures Chromium symlinks: if `chromium` is installed, `chromium-browser` becomes a symlink to it; if `chromium-browser` is installed, `chromium` becomes a symlink to it. This ensures both common names work regardless of which package was installed.
+
 If you change the source tree later, run `sudo -u dongle npm install --omit=dev` before restarting `veo-dongle-kiosk.service`.
 
 ### Boot Optimizations

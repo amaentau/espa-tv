@@ -119,13 +119,67 @@ check_dependencies() {
 
 check_dependencies
 
+# Set up Chromium symlinks properly (same logic as setup-lite.sh)
+setup_chromium_symlinks() {
+  local chromium_path=""
+  local chromium_browser_path=""
+
+  # Check what chromium binaries are available
+  if command -v chromium >/dev/null 2>&1; then
+    chromium_path="$(command -v chromium)"
+  fi
+
+  if command -v chromium-browser >/dev/null 2>&1; then
+    chromium_browser_path="$(command -v chromium-browser)"
+  fi
+
+  # If chromium exists, make chromium-browser a symlink to it
+  if [[ -n "${chromium_path}" ]]; then
+    if [[ "${chromium_browser_path}" != "${chromium_path}" ]]; then
+      info "Making chromium-browser a symlink to chromium"
+      ln -sf "${chromium_path}" /usr/bin/chromium-browser
+    fi
+    # chromium is already the canonical binary
+  elif [[ -n "${chromium_browser_path}" ]]; then
+    # chromium-browser exists but chromium doesn't - make chromium a symlink to chromium-browser
+    info "Making chromium a symlink to chromium-browser"
+    ln -sf "${chromium_browser_path}" /usr/bin/chromium
+  else
+    warning "No Chromium binary found. Please install chromium or chromium-browser."
+    return 1
+  fi
+
+  # Set up google-chrome-stable symlink (commonly expected by some applications)
+  local canonical_chromium=""
+  if command -v chromium >/dev/null 2>&1; then
+    canonical_chromium="$(command -v chromium)"
+  elif command -v chromium-browser >/dev/null 2>&1; then
+    canonical_chromium="$(command -v chromium-browser)"
+  fi
+
+  if [[ -n "${canonical_chromium}" ]]; then
+    ln -sf "${canonical_chromium}" /usr/bin/google-chrome-stable
+    info "Created google-chrome-stable symlink"
+  fi
+
+  return 0
+}
+
 # Create systemd service file
 create_systemd_service() {
   info "Creating systemd service for automatic startup"
 
   local systemd_unit="/etc/systemd/system/${SERVICE_NAME}.service"
   local chromium_path
-  chromium_path="$(command -v chromium-browser || command -v chromium || echo "/usr/bin/chromium-browser")"
+
+  # Get the canonical chromium path after setting up symlinks
+  if command -v chromium >/dev/null 2>&1; then
+    chromium_path="$(command -v chromium)"
+  elif command -v chromium-browser >/dev/null 2>&1; then
+    chromium_path="$(command -v chromium-browser)"
+  else
+    chromium_path="/usr/bin/chromium-browser"
+  fi
 
   cat >"${systemd_unit}" <<EOF
 [Unit]
@@ -163,6 +217,13 @@ EOF
 
   info "Created systemd service: ${systemd_unit}"
 }
+
+# Set up chromium symlinks
+if setup_chromium_symlinks; then
+  info "Chromium symlinks configured successfully"
+else
+  warning "Failed to configure Chromium symlinks"
+fi
 
 create_systemd_service
 

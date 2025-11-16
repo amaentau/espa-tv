@@ -300,13 +300,57 @@ else
   warning "Continuing with setup, but Chromium may not work correctly."
 fi
 
-CHROMIUM_CANDIDATE="$(command -v chromium-browser || command -v chromium || true)"
-if [[ -z "${CHROMIUM_CANDIDATE}" ]]; then
-  warning "Could not locate a Chromium executable; please ensure Chromium is installed."
+# Set up Chromium symlinks properly
+# Prefer 'chromium' as the canonical binary, with 'chromium-browser' as symlink
+setup_chromium_symlinks() {
+  local chromium_path=""
+  local chromium_browser_path=""
+
+  # Check what chromium binaries are available
+  if command -v chromium >/dev/null 2>&1; then
+    chromium_path="$(command -v chromium)"
+  fi
+
+  if command -v chromium-browser >/dev/null 2>&1; then
+    chromium_browser_path="$(command -v chromium-browser)"
+  fi
+
+  # If chromium exists, make chromium-browser a symlink to it
+  if [[ -n "${chromium_path}" ]]; then
+    if [[ "${chromium_browser_path}" != "${chromium_path}" ]]; then
+      info "Making chromium-browser a symlink to chromium"
+      ln -sf "${chromium_path}" /usr/bin/chromium-browser
+    fi
+    # chromium is already the canonical binary
+  elif [[ -n "${chromium_browser_path}" ]]; then
+    # chromium-browser exists but chromium doesn't - make chromium a symlink to chromium-browser
+    info "Making chromium a symlink to chromium-browser"
+    ln -sf "${chromium_browser_path}" /usr/bin/chromium
+  else
+    warning "No Chromium binary found. Please install chromium or chromium-browser."
+    return 1
+  fi
+
+  # Set up google-chrome-stable symlink (commonly expected by some applications)
+  local canonical_chromium=""
+  if command -v chromium >/dev/null 2>&1; then
+    canonical_chromium="$(command -v chromium)"
+  elif command -v chromium-browser >/dev/null 2>&1; then
+    canonical_chromium="$(command -v chromium-browser)"
+  fi
+
+  if [[ -n "${canonical_chromium}" ]]; then
+    ln -sf "${canonical_chromium}" /usr/bin/google-chrome-stable
+    info "Created google-chrome-stable symlink"
+  fi
+
+  return 0
+}
+
+if setup_chromium_symlinks; then
+  info "Chromium symlinks configured successfully"
 else
-  ln -sf "${CHROMIUM_CANDIDATE}" /usr/bin/chromium-browser
-  ln -sf "${CHROMIUM_CANDIDATE}" /usr/bin/chromium
-  ln -sf "${CHROMIUM_CANDIDATE}" /usr/bin/google-chrome-stable
+  warning "Failed to configure Chromium symlinks"
 fi
 
 info "Configuring Xorg for modesetting displays"
