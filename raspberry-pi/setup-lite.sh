@@ -226,34 +226,39 @@ allowed_users=anybody
 needs_root_rights=yes
 EOF
 
+# Create xorg.conf.d directory
 mkdir -p /etc/X11/xorg.conf.d
-DEVICE_KMS_OPTION=""
-if [[ -n "${DRM_DEVICE}" ]]; then
-  DEVICE_KMS_OPTION=$(printf '  Option "kmsdev" "%s"\n' "${DRM_DEVICE}")
-fi
+
+# Remove potential conflicting configurations or previous failed attempts
+rm -f /etc/X11/xorg.conf.d/99-veo-modesetting.conf
+
+# Create a minimal Xorg config that lets the modesetting driver auto-detect.
+# If you are still seeing "no screens found", it often means the kernel DRM device isn't ready
+# or the modesetting driver needs an explicit "Kmsdev" option (e.g. /dev/dri/card0).
+# However, simple config is usually best for RPi 5.
 
 cat >/etc/X11/xorg.conf.d/99-veo-modesetting.conf <<EOF
 Section "Device"
-  Identifier "VeoModesetting"
-  Driver "modesetting"
-  Option "AccelMethod" "glamor"
-  Option "DRI" "3"
+    Identifier      "VeoModesetting"
+    Driver          "modesetting"
+    Option          "AccelMethod" "glamor"
+    Option          "DRI" "3"
 EndSection
 
 Section "Monitor"
-  Identifier "Monitor0"
-  Option "PreferredMode" "${DISPLAY_PREFERRED}"
+    Identifier      "Monitor0"
+    Option          "PreferredMode" "${DISPLAY_PREFERRED}"
 EndSection
 
 Section "Screen"
-  Identifier "Screen0"
-  Device "VeoModesetting"
-  Monitor "Monitor0"
-  DefaultDepth 24
-  SubSection "Display"
-    Virtual ${VIRTUAL_WIDTH} ${VIRTUAL_HEIGHT}
-    Modes ${DISPLAY_MODELINE}
-  EndSubSection
+    Identifier      "Screen0"
+    Device          "VeoModesetting"
+    Monitor         "Monitor0"
+    DefaultDepth    24
+    SubSection "Display"
+        Virtual     ${VIRTUAL_WIDTH} ${VIRTUAL_HEIGHT}
+        Modes       ${DISPLAY_MODELINE}
+    EndSubSection
 EndSection
 EOF
 
