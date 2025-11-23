@@ -91,15 +91,27 @@ class VeoDongleRaspberryPi {
     console.log('Initializing Veo Dongle Raspberry Pi...');
 
     try {
-      // Fetch stream URL from BBS first
-      const bbsKey = process.env.BBS_KEY || 'koti';
-      console.log(`🔍 Fetching stream URL from BBS (key: ${bbsKey})...`);
-      const bbsUrl = await this.fetchBbsStreamUrlOnce(bbsKey);
-      if (!bbsUrl) {
-        throw new Error(`No stream URL found on BBS for key "${bbsKey}"`);
+      // First check for local Stream URL configuration
+      if (process.env.STREAM_URL) {
+        this.streamUrl = process.env.STREAM_URL;
+        console.log(`🎯 Using configured Stream URL: ${this.streamUrl}`);
+      } else {
+        // Fetch stream URL from BBS
+        const bbsKey = process.env.BBS_KEY || 'koti';
+        console.log(`🔍 Fetching stream URL from BBS (key: ${bbsKey})...`);
+        const bbsUrl = await this.fetchBbsStreamUrlOnce(bbsKey);
+        
+        if (bbsUrl) {
+          this.streamUrl = bbsUrl;
+          console.log(`🎯 Using stream URL from BBS: ${this.streamUrl}`);
+        } else {
+           console.log(`⚠️ No stream URL found on BBS for key "${bbsKey}"`);
+        }
       }
-      this.streamUrl = bbsUrl;
-      console.log(`🎯 Using stream URL: ${this.streamUrl}`);
+
+      if (!this.streamUrl) {
+         throw new Error('No Stream URL configured (env: STREAM_URL) or found in BBS');
+      }
 
       // Setup server
       this.setupServer();

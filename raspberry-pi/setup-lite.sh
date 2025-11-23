@@ -105,39 +105,14 @@ load_display_config() {
 }
 
 detect_drm_device() {
+  # Skip aggressive device pinning for modesetting unless manually set.
+  # The modesetting driver is usually smart enough to find the primary KMS device.
+  # Forcing a specific /dev/dri/cardX can fail if the boot order changes.
   if [[ -n "${DRM_DEVICE:-}" ]]; then
-    return
+     info "Using manually configured DRM device: ${DRM_DEVICE}"
+  else
+     info "Auto-detecting DRM device by letting Xorg modesetting driver choose."
   fi
-
-  local -a drm_files
-  shopt -s nullglob
-  drm_files=(/dev/dri/card*)
-  shopt -u nullglob
-
-  if (( ${#drm_files[@]} == 0 )); then
-    warning "No DRM card devices found under /dev/dri; Xorg may fall back to FBDEV."
-    return
-  fi
-
-  local -a sorted_cards
-  mapfile -t sorted_cards < <(printf '%s\n' "${drm_files[@]}" | sort)
-
-  for card in "${sorted_cards[@]}"; do
-    if [[ -r "${card}/device/uevent" ]]; then
-      local driver
-      driver="$(grep -E '^DRIVER=' "${card}/device/uevent" | cut -d'=' -f2-)"
-      if [[ "${driver}" == vc4* ]]; then
-        DRM_DEVICE="${card}"
-        break
-      fi
-    fi
-  done
-
-  if [[ -z "${DRM_DEVICE}" ]]; then
-    DRM_DEVICE="${sorted_cards[0]}"
-  fi
-
-  info "Detected DRM device ${DRM_DEVICE} for modesetting"
 }
 
 if [[ $EUID -ne 0 ]]; then
@@ -261,7 +236,7 @@ cat >/etc/X11/xorg.conf.d/99-veo-modesetting.conf <<EOF
 Section "Device"
   Identifier "VeoModesetting"
   Driver "modesetting"
-${DEVICE_KMS_OPTION}  Option "AccelMethod" "glamor"
+  Option "AccelMethod" "glamor"
   Option "DRI" "3"
 EndSection
 
