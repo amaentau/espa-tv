@@ -232,15 +232,33 @@ mkdir -p /etc/X11/xorg.conf.d
 # Remove potential conflicting configurations or previous failed attempts
 rm -f /etc/X11/xorg.conf.d/99-veo-modesetting.conf
 
-# Create a minimal Xorg config that lets the modesetting driver auto-detect.
-# If you are still seeing "no screens found", it often means the kernel DRM device isn't ready
-# or the modesetting driver needs an explicit "Kmsdev" option (e.g. /dev/dri/card0).
-# However, simple config is usually best for RPi 5.
+# Create a robust Xorg config that tries to find the correct DRM device.
+# RPi 5 often has card1 as the primary display controller (vc4).
+
+# Try to detect which card is vc4 (usually card1 on Pi 5)
+VC4_CARD=""
+if [[ -e /dev/dri/card1 ]] && udevadm info -a -n /dev/dri/card1 | grep -q "DRM_NAME=vc4"; then
+  VC4_CARD="/dev/dri/card1"
+elif [[ -e /dev/dri/card0 ]] && udevadm info -a -n /dev/dri/card0 | grep -q "DRM_NAME=vc4"; then
+  VC4_CARD="/dev/dri/card0"
+fi
+
+# Fallback: if we can't detect via udev/grep easily, assume card1 if it exists (common for Pi 5), else card0
+if [[ -z "${VC4_CARD}" ]]; then
+  if [[ -e /dev/dri/card1 ]]; then
+     VC4_CARD="/dev/dri/card1"
+  else
+     VC4_CARD="/dev/dri/card0"
+  fi
+fi
+
+info "Configuring Xorg to use DRM device: ${VC4_CARD}"
 
 cat >/etc/X11/xorg.conf.d/99-veo-modesetting.conf <<EOF
 Section "Device"
     Identifier      "VeoModesetting"
     Driver          "modesetting"
+    Option          "Kmsdev" "${VC4_CARD}"
     Option          "AccelMethod" "glamor"
     Option          "DRI" "3"
 EndSection
