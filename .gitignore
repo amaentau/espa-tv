@@ -61,9 +61,7 @@ Thumbs.db
 
 # Project-specific
 profile.xml
-**/config.json
 **/config.json~
-raspberry-pi/config.json
 raspberry-pi/config.json~
 
 # Dependencies
@@ -196,7 +194,6 @@ ios/build/
 # Local configuration files
 config.js
 *.local
-raspberry-pi/config.json
 bb-functions/local.settings.json
 
 # Archives and binaries

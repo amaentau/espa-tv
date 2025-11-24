@@ -1,0 +1,42 @@
+{
+  "azure": {
+    "bbsUrl": "https://bbs-web-123.azurewebsites.net"
+  },
+  "display": {
+    "modes": ["3840x2160", "1920x1080", "1280x720"],
+    "preferredMode": "auto"
+  },
+  "coordinates": {
+    "1280": {
+      "play": { "x": 63, "y": 681 },
+      "fullscreen": { "x": 1136, "y": 678 },
+      "baseWidth": 1280
+    },
+    "1920": {
+      "play": { "x": 77, "y": 1039 },
+      "fullscreen": { "x": 1759, "y": 1041 },
+      "baseWidth": 1920
+    },
+    "3840": {
+      "play": { "x": 114, "y": 2124 },
+      "fullscreen": { "x": 3643, "y": 2122 },
+      "baseWidth": 3840
+    }
+  },
+  "browser": {
+    "headless": false,
+    "timeout": 30000,
+    "ignoreDefaultArgs": ["--enable-automation"]
+  },
+  "login": {
+    "url": "https://live.veo.co/login",
+    "enabled": true
+  },
+  "port": 3000,
+  "deviceId": "raspberry-pi-001",
+  "viewport": {
+    "width": 1920,
+    "height": 1080,
+    "force": false
+  }
+}
