@@ -130,31 +130,44 @@ class ProvisioningManager {
     if (data.wifiSsid) {
       console.log(`📶 Configuring WiFi Profile: ${data.wifiSsid}`);
       try {
-        // Create connection profile without activating immediately (to preserve Hotspot for response)
-        // Delete existing if any
-        const safeSsid = data.wifiSsid.replace(/"/g, '\\"');
-        const safePass = data.wifiPassword ? data.wifiPassword.replace(/"/g, '\\"') : '';
+        // Helper: Timeout wrapper for exec
+        const execWithTimeout = async (cmd, timeoutMs = 5000) => {
+            return Promise.race([
+                execPromise(cmd),
+                new Promise((_, reject) => setTimeout(() => reject(new Error(`Command timed out: ${cmd}`)), timeoutMs))
+            ]);
+        };
+
+        // Use single quotes for safer shell escaping
+        const escapeShellArg = (arg) => {
+          return `'${String(arg).replace(/'/g, "'\\''")}'`;
+        };
+
+        const safeSsid = escapeShellArg(data.wifiSsid);
+        const safePass = data.wifiPassword ? escapeShellArg(data.wifiPassword) : '';
         
         // Check/Delete existing
-        try { await execPromise(`sudo nmcli connection delete "${safeSsid}"`); } catch(_) {}
+        try { await execWithTimeout(`sudo nmcli connection delete ${safeSsid}`); } catch(_) {}
         
         // Add new profile
         // Note: 'nmcli con add' does not disconnect current connection usually
-        let cmd = `sudo nmcli con add type wifi ifname wlan0 con-name "${safeSsid}" ssid "${safeSsid}"`;
+        let cmd = `sudo nmcli con add type wifi ifname wlan0 con-name ${safeSsid} ssid ${safeSsid}`;
         if (safePass) {
-             cmd += ` wifi-sec.key-mgmt wpa-psk wifi-sec.psk "${safePass}"`;
+             cmd += ` wifi-sec.key-mgmt wpa-psk wifi-sec.psk ${safePass}`;
         }
-        await execPromise(cmd);
+        
+        console.log(`   Executing: ${cmd.replace(/psk '.*?'/, "psk '***'")}`);
+        await execWithTimeout(cmd, 10000);
         
         // Ensure it has autoconnect enabled
-        await execPromise(`sudo nmcli con modify "${safeSsid}" connection.autoconnect yes`);
+        await execWithTimeout(`sudo nmcli con modify ${safeSsid} connection.autoconnect yes`);
         
         console.log('✅ WiFi profile created (will connect on restart)');
       } catch (e) {
         console.error('⚠️ WiFi profile creation error:', e.message);
-        // We throw here so UI knows saving failed?
-        // Yes, if we can't save wifi config, user should know.
-        throw new Error(`Failed to configure WiFi: ${e.message}`);
+        // We LOG the error but do NOT throw it. This allows the save process to "succeed" 
+        // (saving credentials/config) and restart, even if WiFi config failed.
+        // This is crucial so the user isn't stuck in a loop if they made a typo or if nmcli is flaky.
       }
     }
   }
