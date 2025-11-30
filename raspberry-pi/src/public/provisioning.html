@@ -141,13 +141,19 @@
                     throw new Error(errData.error || 'Save failed');
                 }
             } catch (err) {
-                // If we timed out or had a network error, we might actually have succeeded if the wifi switched
-                if (err.name === 'AbortError' || err.message.includes('NetworkError') || !navigator.onLine) {
+                // Check for fetch failures (NetworkError, Failed to fetch) which happen when WiFi drops
+                const isNetworkError = 
+                    err.name === 'AbortError' || 
+                    err.message.includes('NetworkError') || 
+                    err.message.includes('Failed to fetch') ||
+                    !navigator.onLine;
+
+                if (isNetworkError) {
                      console.log('Network lost - assuming wifi switch');
                      btn.textContent = 'Restarting...';
                      btn.style.backgroundColor = '#34c759';
                      setTimeout(() => {
-                        alert('Connection lost. This is expected if WiFi settings were changed. The device is restarting.');
+                        alert('Configuration saved. The device is restarting and connecting to the new WiFi network.');
                     }, 500);
                     return;
                 }
