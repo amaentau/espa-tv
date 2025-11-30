@@ -143,6 +143,8 @@ dist
 # Gatsby files
 .cache/
 public
+!raspberry-pi/src/public/
+
 
 # Storybook build outputs
 .out

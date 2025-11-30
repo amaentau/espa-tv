@@ -110,9 +110,7 @@ class VeoDongleRaspberryPi {
       if (this.needsProvisioning) {
         const provisioning = new ProvisioningManager(this.app, this.port);
         await provisioning.start();
-        this.server.listen(this.port, () => {
-          console.log(`Provisioning Server listening on port ${this.port}`);
-        });
+        // Server listen is handled in start()
         return;
       }
 
