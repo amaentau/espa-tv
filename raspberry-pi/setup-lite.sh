@@ -399,11 +399,11 @@ chmod +x "${SERVICE_HOME}/.xinitrc"
 success "Setup complete! You can launch the kiosk manually via ${APP_ROOT}/scripts/start-kiosk.sh."
 
 info "Installing systemd service for Veo Kiosk"
-SERVICE_FILE="/etc/systemd/system/veo-kiosk.service"
+SERVICE_FILE="/etc/systemd/system/veo-dongle.service"
 
 # Remove old service if it exists
-if systemctl is-active --quiet veo-kiosk; then
-  systemctl stop veo-kiosk
+if systemctl is-active --quiet veo-dongle; then
+  systemctl stop veo-dongle
 fi
 
 cat >"${SERVICE_FILE}" <<EOF
@@ -432,11 +432,11 @@ EOF
 # Reload systemd
 systemctl daemon-reload
 # Enable the service so it starts on boot
-systemctl enable veo-kiosk.service
+systemctl enable veo-dongle.service
 
 success "Systemd service installed and enabled."
-info "To start the service now: sudo systemctl start veo-kiosk"
-info "To stop the service: sudo systemctl stop veo-kiosk"
-info "To view logs: journalctl -u veo-kiosk -f"
+info "To start the service now: sudo systemctl start veo-dongle"
+info "To stop the service: sudo systemctl stop veo-dongle"
+info "To view logs: journalctl -u veo-dongle -f"
 
 

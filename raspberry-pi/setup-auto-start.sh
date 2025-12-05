@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_ROOT="${SCRIPT_DIR}"
 SERVICE_USER="dongle"
-SERVICE_NAME="veo-dongle-kiosk"
+SERVICE_NAME="veo-dongle"
 
 info() {
   echo -e "\e[1;34m[INFO]\e[0m $*"

@@ -39,7 +39,7 @@ Use the curated script at `raspberry-pi/setup-lite.sh` to bootstrap a fresh Rasp
 - creates the `dongle` user, adds it to `video`, `render`, `input`, `dialout`, and `sudo`, and chowns the application tree
 - installs Node.js 20, Chromium, Xorg, X11 utilities, and the Chromium runtime libraries required for Puppeteer
 - writes `/etc/X11/xorg.conf.d/99-veo-modesetting.conf` so the `modesetting` driver is forced with `Virtual 3840x2160` and the common HD/FullHD/4K modes
-- writes `/etc/systemd/system/veo-dongle-kiosk.service`, which starts `xinit` as the `dongle` user, runs `raspberry-pi/scripts/start-kiosk.sh`, and keeps Chromium in fullscreen kiosk mode on `DISPLAY=:0`
+- writes `/etc/systemd/system/veo-dongle.service`, which starts `xinit` as the `dongle` user, runs `raspberry-pi/scripts/start-kiosk.sh`, and keeps Chromium in fullscreen kiosk mode on `DISPLAY=:0`
 - skips Puppeteer's embedded Chromium download (`PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=1`) so the application always receives the system browser defined by `config.browser.executablePath`
 - symlinks `/usr/bin/chromium-browser`, `/usr/bin/chromium`, and `/usr/bin/google-chrome-stable` to the installed binary so both Puppeteer and any scripts that expect Chrome will succeed
 - **boot optimizations**: disables unnecessary services (bluetooth, avahi, plymouth, etc.), configures kernel module blacklisting, reduces systemd logging, optimizes cmdline.txt with `fastboot`, and sets memory limits for the kiosk service
@@ -88,7 +88,7 @@ The script creates a management script (`manage-service.sh`) with commands for m
 After the script completes the kiosk service is enabled automatically:
 
 ```bash
-sudo journalctl -f -u veo-dongle-kiosk.service
+sudo journalctl -f -u veo-dongle.service
 ```
 
 ### Configuration strategy for Raspberry vs WSL
@@ -105,7 +105,7 @@ The script includes comprehensive package compatibility checking for all Chromiu
 
 The setup also properly configures Chromium symlinks: if `chromium` is installed, `chromium-browser` becomes a symlink to it; if `chromium-browser` is installed, `chromium` becomes a symlink to it. This ensures both common names work regardless of which package was installed.
 
-If you change the source tree later, run `sudo -u dongle npm install --omit=dev` before restarting `veo-dongle-kiosk.service`.
+If you change the source tree later, run `sudo -u dongle npm install --omit=dev` before restarting `veo-dongle.service`.
 
 ### Boot Optimizations
 

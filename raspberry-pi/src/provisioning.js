@@ -4,6 +4,8 @@ const path = require('path');
 const util = require('util');
 const execPromise = util.promisify(exec);
 
+const express = require('express');
+
 class ProvisioningManager {
   constructor(app, port) {
     this.app = app;
@@ -15,19 +17,20 @@ class ProvisioningManager {
 
   async start() {
     console.log('🚀 Starting Provisioning Mode...');
-    
-    // 1. Setup Hotspot
-    try {
-      await this.setupHotspot();
-    } catch (e) {
-      console.error('⚠️ Failed to setup hotspot:', e.message);
-      console.log('Continuing hoping for existing connection...');
-    }
 
-    // 2. Setup Routes
+    // Ensure middleware is set up for parsing JSON bodies
+    this.app.use(express.json());
+    
+    // 1. Setup Routes (do this first so server can start listening)
     this.setupRoutes();
 
-    console.log(`✅ Provisioning server ready. Connect to WiFi "${this.ssid}" and go to http://10.42.0.1:${this.port} (or the device IP)`);
+    // 2. Setup Hotspot (run in background to not block server startup)
+    this.setupHotspot().catch(e => {
+      console.error('⚠️ Hotspot setup encountered an issue:', e.message);
+    });
+
+    console.log(`✅ Provisioning routes configured. Web server will start shortly.`);
+    console.log(`   Connect to WiFi "${this.ssid}" and navigate to http://10.42.0.1:${this.port}`);
   }
 
   async setupHotspot() {

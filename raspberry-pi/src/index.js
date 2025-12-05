@@ -71,7 +71,8 @@ class VeoDongleRaspberryPi {
 
     try {
       console.log('Loading JSON configuration from config.json');
-      return JSON.parse(fs.readFileSync(jsonConfigPath, 'utf8'));
+      return JSON.parse(fs.readFileSync(js
+        nfigPath, 'utf8'));
     } catch (error) {
       console.error(`Failed to parse config.json: ${error.message}`);
       return null;
@@ -93,6 +94,7 @@ class VeoDongleRaspberryPi {
         console.log('No credentials.json found - authentication disabled');
         return null;
       }
+      
     } catch (error) {
       console.error('Failed to load credentials:', error.message);
       console.log('Continuing without authentication...');
@@ -997,6 +999,7 @@ class VeoDongleRaspberryPi {
   async start() {
     try {
       await this.initialize();
+      console.log('🔌 Starting HTTP server...');
       this.server.listen(this.port, () => {
         console.log(`Server listening on port ${this.port}`);
       });
@@ -1045,6 +1048,18 @@ process.on('SIGTERM', async () => {
     await veoDongle.stop();
   }
   process.exit(0);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Do not exit process; just log it
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // Do not exit process immediately; try to stay alive if possible
 });
 
 // Command-line usage
