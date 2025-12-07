@@ -71,8 +71,7 @@ class VeoDongleRaspberryPi {
 
     try {
       console.log('Loading JSON configuration from config.json');
-      return JSON.parse(fs.readFileSync(js
-        nfigPath, 'utf8'));
+      return JSON.parse(fs.readFileSync(jsonConfigPath, 'utf8'));
     } catch (error) {
       console.error(`Failed to parse config.json: ${error.message}`);
       return null;

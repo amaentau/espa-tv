@@ -71,8 +71,9 @@ class ProvisioningManager {
         res.json({ success: true });
         
         // Restart
-        setTimeout(() => {
-          console.log('🔄 Configuration saved. Restarting system...');
+        setTimeout(async () => {
+          console.log('🔄 Configuration saved. Cleaning up hotspot and restarting system...');
+          await this.cleanupHotspot();
           // Exit process; systemd (restart=always) will relaunch us.
           // With config present, we will start in normal mode.
           process.exit(0);
@@ -82,6 +83,19 @@ class ProvisioningManager {
         res.status(500).json({ error: e.message });
       }
     });
+  }
+
+  async cleanupHotspot() {
+    try {
+      console.log('🧹 Removing Hotspot profile...');
+      // We use a timeout to ensure we don't hang if nmcli is unresponsive
+      const cmd = `sudo nmcli connection delete "${this.hotspotName}"`;
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000));
+      await Promise.race([execPromise(cmd), timeoutPromise]);
+      console.log('✅ Hotspot profile removed');
+    } catch (e) {
+      console.warn('⚠️ Failed to remove hotspot profile (non-fatal):', e.message);
+    }
   }
 
   async handleSave(data) {
@@ -116,7 +130,7 @@ class ProvisioningManager {
     const config = {
       deviceId: data.deviceId || `raspberry-pi-${Date.now()}`,
       azure: {
-        bbsUrl: data.bbsUrl || "https://veo-bbs.azurewebsites.net/api"
+        bbsUrl: data.bbsUrl || "https://bbs-web-123.azurewebsites.net/"
       },
       display: {
         preferredMode: "auto",
