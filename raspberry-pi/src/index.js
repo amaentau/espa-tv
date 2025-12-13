@@ -397,6 +397,7 @@ class VeoDongleRaspberryPi {
       '--disable-dev-shm-usage',
       '--kiosk',
       '--start-fullscreen',
+      '--hide-scrollbars',
       '--disable-infobars',
       '--disable-web-security',
       '--autoplay-policy=no-user-gesture-required',

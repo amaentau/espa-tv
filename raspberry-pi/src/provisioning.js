@@ -64,6 +64,16 @@ class ProvisioningManager {
       res.sendFile(path.join(__dirname, 'public', 'provisioning.html'));
     });
 
+    this.app.get('/provisioning/wifi-scan', async (req, res) => {
+      try {
+        const networks = await this.scanWifiNetworks();
+        res.json(networks);
+      } catch (e) {
+        console.error('Wifi scan failed:', e);
+        res.json([]); // Return empty list on failure rather than 500
+      }
+    });
+
     this.app.post('/provisioning/save', async (req, res) => {
       try {
         console.log('📥 Received configuration data');
@@ -83,6 +93,49 @@ class ProvisioningManager {
         res.status(500).json({ error: e.message });
       }
     });
+  }
+
+  async scanWifiNetworks() {
+    try {
+      // Use nmcli to list networks in terse format with specific fields
+      // -t: terse (machine readable, : separated)
+      // -f: fields
+      const { stdout } = await execPromise('nmcli -t -f SSID,SIGNAL,SECURITY dev wifi list');
+      
+      const networks = [];
+      const seen = new Set();
+      
+      const lines = stdout.split('\n');
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        
+        // Simple parse assuming standard SSIDs (escaping logic omitted for simplicity as typical SSIDs don't have :)
+        // Real nmcli -t escapes colons with backslash.
+        // A robust split would be needed for complex SSIDs.
+        // Quick workaround: Use a non-regex split that respects escaping if needed, 
+        // but for now simple split is likely 99% sufficient for typical setup scenarios.
+        const parts = line.split(/(?<!\\):/); 
+        
+        let ssid = parts[0] ? parts[0].replace(/\\:/g, ':') : '';
+        const signal = parts[1] ? parseInt(parts[1]) : 0;
+        const security = parts[2] || '';
+
+        ssid = ssid.trim();
+        if (!ssid) continue;
+
+        // Deduplicate, keeping strongest signal
+        if (seen.has(ssid)) continue;
+        
+        seen.add(ssid);
+        networks.push({ ssid, signal, security });
+      }
+
+      // Sort by signal strength
+      return networks.sort((a, b) => b.signal - a.signal);
+    } catch (e) {
+      console.warn('Scan command failed:', e.message);
+      return [];
+    }
   }
 
   async cleanupHotspot() {
@@ -110,85 +163,149 @@ class ProvisioningManager {
     }
 
     // 2. Save config.json
-    // Construct config object matching application structure
-    const baseWidth = 1920;
-    
-    // Defaults
-    const playX = data.playX !== undefined && data.playX !== null && !isNaN(data.playX) ? parseInt(data.playX) : 960;
-    const playY = data.playY !== undefined && data.playY !== null && !isNaN(data.playY) ? parseInt(data.playY) : 540;
-    const fsX = data.fullscreenX !== undefined && data.fullscreenX !== null && !isNaN(data.fullscreenX) ? parseInt(data.fullscreenX) : 1800;
-    const fsY = data.fullscreenY !== undefined && data.fullscreenY !== null && !isNaN(data.fullscreenY) ? parseInt(data.fullscreenY) : 1000;
+    const configPath = path.join(__dirname, '..', 'config.json');
+    let config = {};
 
-    const coords = {
-        [baseWidth]: {
-            play: { x: playX, y: playY },
-            fullscreen: { x: fsX, y: fsY },
-            baseWidth: baseWidth
-        }
+    // Try to load existing config
+    try {
+      if (fs.existsSync(configPath)) {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        console.log('📂 Loaded existing configuration to preserve settings');
+      }
+    } catch (e) {
+      console.warn('⚠️ Could not load existing config:', e.message);
+    }
+
+    // Update simple fields (preserving existing if not provided)
+    if (data.deviceId) config.deviceId = data.deviceId;
+    if (!config.deviceId) config.deviceId = `raspberry-pi-${Date.now()}`;
+
+    // Ensure nested objects exist
+    config.azure = config.azure || {};
+    if (data.bbsUrl) config.azure.bbsUrl = data.bbsUrl;
+    if (!config.azure.bbsUrl) config.azure.bbsUrl = "https://bbs-web-123.azurewebsites.net/";
+
+    config.display = config.display || {};
+    if (!config.display.preferredMode) config.display.preferredMode = "auto";
+    if (!config.display.modes) config.display.modes = ["3840x2160", "1920x1080", "1280x720"];
+
+    config.viewport = config.viewport || {};
+    if (!config.viewport.width) config.viewport.width = 1920;
+    if (!config.viewport.height) config.viewport.height = 1080;
+
+    // Handle Coordinates
+    const defaults = {
+      1280: { play: { x: 63, y: 681 }, fullscreen: { x: 1136, y: 678 } },
+      1920: { play: { x: 77, y: 1039 }, fullscreen: { x: 1759, y: 1041 } },
+      3840: { play: { x: 114, y: 2124 }, fullscreen: { x: 3643, y: 2122 } }
     };
 
-    const config = {
-      deviceId: data.deviceId || `raspberry-pi-${Date.now()}`,
-      azure: {
-        bbsUrl: data.bbsUrl || "https://bbs-web-123.azurewebsites.net/"
-      },
-      display: {
-        preferredMode: "auto",
-        modes: ["3840x2160", "1920x1080", "1280x720"]
-      },
-      coordinates: coords,
-      viewport: { width: 1920, height: 1080 }
-    };
+    config.coordinates = config.coordinates || {};
 
-    fs.writeFileSync(path.join(__dirname, '..', 'config.json'), JSON.stringify(config, null, 2));
+    // 1. Ensure defaults exist for any missing resolution
+    for (const [width, def] of Object.entries(defaults)) {
+      if (!config.coordinates[width]) {
+        console.log(`📍 Initializing default coordinates for ${width}px`);
+        config.coordinates[width] = {
+          play: { ...def.play },
+          fullscreen: { ...def.fullscreen },
+          baseWidth: parseInt(width)
+        };
+      }
+    }
+
+    // 2. Apply user updates from request (Advanced UI)
+    // Expected format: playX_1920, playY_1920, etc.
+    const resolutions = [1280, 1920, 3840];
+    let coordsUpdated = false;
+
+    resolutions.forEach(res => {
+      const px = data[`playX_${res}`];
+      const py = data[`playY_${res}`];
+      const fx = data[`fullscreenX_${res}`];
+      const fy = data[`fullscreenY_${res}`];
+
+      // Only update if value is provided and non-empty
+      if ((px !== undefined && px !== '') || 
+          (py !== undefined && py !== '') || 
+          (fx !== undefined && fx !== '') || 
+          (fy !== undefined && fy !== '')) {
+        
+        coordsUpdated = true;
+        const target = config.coordinates[res]; // Guaranteed to exist by step 1
+        
+        if (px !== undefined && px !== '') target.play.x = parseInt(px);
+        if (py !== undefined && py !== '') target.play.y = parseInt(py);
+        if (fx !== undefined && fx !== '') target.fullscreen.x = parseInt(fx);
+        if (fy !== undefined && fy !== '') target.fullscreen.y = parseInt(fy);
+        
+        console.log(`📍 Updated custom coordinates for ${res}px`);
+      }
+    });
+
+    if (!coordsUpdated) {
+      console.log('📍 No manual coordinate adjustments provided, keeping existing/defaults');
+    }
+
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
     console.log('💾 Saved config.json');
 
     // 3. Configure WiFi
-    if (data.wifiSsid) {
-      console.log(`📶 Configuring WiFi Profile: ${data.wifiSsid}`);
-      try {
-        // Helper: Timeout wrapper for exec
-        const execWithTimeout = async (cmd, timeoutMs = 5000) => {
-            return Promise.race([
-                execPromise(cmd),
-                new Promise((_, reject) => setTimeout(() => reject(new Error(`Command timed out: ${cmd}`)), timeoutMs))
-            ]);
-        };
+    // Support new 'wifiNetworks' array or legacy single fields
+    let networks = [];
+    if (Array.isArray(data.wifiNetworks)) {
+      networks = data.wifiNetworks.filter(n => n.ssid);
+    } else if (data.wifiSsid) {
+      networks.push({ ssid: data.wifiSsid, password: data.wifiPassword });
+    }
 
-        // Use single quotes for safer shell escaping
-        const escapeShellArg = (arg) => {
-          return `'${String(arg).replace(/'/g, "'\\''")}'`;
-        };
+    if (networks.length > 0) {
+      console.log(`📶 Configuring ${networks.length} WiFi networks...`);
+      
+      const execWithTimeout = async (cmd, timeoutMs = 5000) => {
+        return Promise.race([
+            execPromise(cmd),
+            new Promise((_, reject) => setTimeout(() => reject(new Error(`Command timed out: ${cmd}`)), timeoutMs))
+        ]);
+      };
 
-        const safeSsid = escapeShellArg(data.wifiSsid);
-        const safePass = data.wifiPassword ? escapeShellArg(data.wifiPassword) : '';
+      const escapeShellArg = (arg) => `'${String(arg).replace(/'/g, "'\\''")}'`;
+
+      for (const net of networks) {
+        if (!net.ssid) continue;
+        console.log(`   Processing network: ${net.ssid}`);
         
-        // Check/Delete existing
-        try { await execWithTimeout(`sudo nmcli connection delete ${safeSsid}`); } catch(_) {}
-        
-        // Add new profile
-        // Note: 'nmcli con add' does not disconnect current connection usually
-        let cmd = `sudo nmcli con add type wifi ifname wlan0 con-name ${safeSsid} ssid ${safeSsid}`;
-        if (safePass) {
+        try {
+          const safeSsid = escapeShellArg(net.ssid);
+          const safePass = net.password ? escapeShellArg(net.password) : '';
+          
+          // Delete existing profile with same name to ensure clean state
+          try { await execWithTimeout(`sudo nmcli connection delete ${safeSsid}`); } catch(_) {}
+
+          let cmd = `sudo nmcli con add type wifi ifname wlan0 con-name ${safeSsid} ssid ${safeSsid}`;
+          if (safePass) {
              cmd += ` wifi-sec.key-mgmt wpa-psk wifi-sec.psk ${safePass}`;
+          }
+
+          // Log safely
+          console.log(`   Executing: ${cmd.replace(/psk '.*?'/, "psk '***'")}`);
+          
+          // Add profile (10s timeout)
+          await execWithTimeout(cmd, 10000);
+          
+          // Enable autoconnect
+          await execWithTimeout(`sudo nmcli con modify ${safeSsid} connection.autoconnect yes`);
+          
+          // Set priority? We could set priority based on order in list (higher number = higher priority)
+          // nmcli connection modify ID connection.autoconnect-priority 10
+          
+        } catch (e) {
+          console.error(`   ⚠️ Failed to configure ${net.ssid}:`, e.message);
         }
-        
-        console.log(`   Executing: ${cmd.replace(/psk '.*?'/, "psk '***'")}`);
-        await execWithTimeout(cmd, 10000);
-        
-        // Ensure it has autoconnect enabled
-        await execWithTimeout(`sudo nmcli con modify ${safeSsid} connection.autoconnect yes`);
-        
-        console.log('✅ WiFi profile created (will connect on restart)');
-      } catch (e) {
-        console.error('⚠️ WiFi profile creation error:', e.message);
-        // We LOG the error but do NOT throw it. This allows the save process to "succeed" 
-        // (saving credentials/config) and restart, even if WiFi config failed.
-        // This is crucial so the user isn't stuck in a loop if they made a typo or if nmcli is flaky.
       }
+      console.log('✅ WiFi configuration complete');
     }
   }
 }
 
 module.exports = ProvisioningManager;
-

@@ -60,6 +60,10 @@
         button:hover {
             background-color: #0077ed;
         }
+        button:disabled {
+            background-color: #999;
+            cursor: not-allowed;
+        }
         .section-title {
             font-size: 0.9rem;
             text-transform: uppercase;
@@ -69,6 +73,114 @@
             margin-bottom: 1rem;
             border-bottom: 1px solid #e5e5e5;
             padding-bottom: 0.5rem;
+        }
+        
+        /* WiFi List Styles */
+        .wifi-item {
+            background: #fbfbfd;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e5e5e5;
+            margin-bottom: 10px;
+            animation: fadeIn 0.3s ease;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .wifi-item-header {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 5px;
+        }
+        .remove-wifi {
+            color: #ff3b30;
+            background: none !important;
+            border: none;
+            padding: 0 5px;
+            font-size: 13px;
+            width: auto;
+            cursor: pointer;
+            font-weight: normal;
+        }
+        .remove-wifi:hover {
+            text-decoration: underline;
+            background: none;
+        }
+        .wifi-inputs {
+            display: grid;
+            gap: 10px;
+        }
+        .add-wifi-btn {
+            background-color: transparent;
+            border: 2px dashed #d2d2d7;
+            color: #0071e3;
+            margin-top: 10px;
+        }
+        .add-wifi-btn:hover {
+            background-color: #f5f5f7;
+            border-color: #0071e3;
+        }
+        .wifi-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid #e5e5e5;
+            padding-bottom: 0.5rem;
+        }
+        .wifi-header-row .section-title {
+            margin: 0;
+            border: none;
+            padding: 0;
+        }
+
+        /* Advanced Coords */
+        details {
+            margin-top: 30px;
+            border-top: 1px solid #e5e5e5;
+            padding-top: 15px;
+        }
+        summary {
+            cursor: pointer;
+            color: #0071e3;
+            font-weight: 500;
+            font-size: 0.95rem;
+            outline: none;
+            user-select: none;
+        }
+        .advanced-note {
+            font-size: 0.8em;
+            color: #666;
+            margin: 10px 0 15px 0;
+            line-height: 1.4;
+        }
+        .coord-section {
+            background: #f9f9f9;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            border: 1px solid #eee;
+        }
+        .coord-header {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .coord-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+        .coord-grid input {
+            font-size: 13px;
+            padding: 8px;
+        }
+        .coord-label {
+            font-size: 0.75em;
+            color: #888;
+            margin-bottom: 2px;
+            display: block;
         }
     </style>
 </head>
@@ -86,15 +198,17 @@
                 <input type="password" id="password" name="password" required placeholder="********">
             </div>
 
-            <div class="section-title">WiFi Connection</div>
-            <div class="form-group">
-                <label for="wifiSsid">Network Name (SSID)</label>
-                <input type="text" id="wifiSsid" name="wifiSsid" placeholder="WiFi Name">
+            <div class="wifi-header-row">
+                <div class="section-title">WiFi Connections</div>
+                <small id="scanStatus" style="color: #86868b; font-size: 12px; display: none;">Scanning...</small>
             </div>
-            <div class="form-group">
-                <label for="wifiPassword">WiFi Password</label>
-                <input type="password" id="wifiPassword" name="wifiPassword" placeholder="WiFi Password">
+            
+            <div id="wifi-container">
+                <!-- WiFi items will be added here -->
             </div>
+            
+            <button type="button" id="addWifiBtn" class="add-wifi-btn">+ Add Network</button>
+            <datalist id="wifi-scan-results"></datalist>
 
             <div class="section-title">Device Settings (Optional)</div>
             <div class="form-group">
@@ -102,11 +216,148 @@
                 <input type="text" id="deviceId" name="deviceId" placeholder="raspberry-pi-...">
             </div>
 
-            <button type="submit" id="submitBtn">Save & Restart</button>
+            <details>
+                <summary>Advanced: Manual Click Coordinates</summary>
+                <p class="advanced-note">
+                    Use these fields only if the Veo player layout has changed. 
+                    Leave empty to use existing or default values.
+                </p>
+
+                <div class="coord-section">
+                    <div class="coord-header">HD (1280x720)</div>
+                    <div class="coord-grid">
+                        <div>
+                            <span class="coord-label">Play X</span>
+                            <input type="number" name="playX_1280" placeholder="Default: 63">
+                        </div>
+                        <div>
+                            <span class="coord-label">Play Y</span>
+                            <input type="number" name="playY_1280" placeholder="Default: 681">
+                        </div>
+                        <div>
+                            <span class="coord-label">Fullscreen X</span>
+                            <input type="number" name="fullscreenX_1280" placeholder="Def: 1136">
+                        </div>
+                        <div>
+                            <span class="coord-label">Fullscreen Y</span>
+                            <input type="number" name="fullscreenY_1280" placeholder="Def: 678">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="coord-section">
+                    <div class="coord-header">Full HD (1920x1080)</div>
+                    <div class="coord-grid">
+                        <div>
+                            <span class="coord-label">Play X</span>
+                            <input type="number" name="playX_1920" placeholder="Default: 77">
+                        </div>
+                        <div>
+                            <span class="coord-label">Play Y</span>
+                            <input type="number" name="playY_1920" placeholder="Default: 1039">
+                        </div>
+                        <div>
+                            <span class="coord-label">Fullscreen X</span>
+                            <input type="number" name="fullscreenX_1920" placeholder="Def: 1759">
+                        </div>
+                        <div>
+                            <span class="coord-label">Fullscreen Y</span>
+                            <input type="number" name="fullscreenY_1920" placeholder="Def: 1041">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="coord-section">
+                    <div class="coord-header">4K (3840x2160)</div>
+                    <div class="coord-grid">
+                        <div>
+                            <span class="coord-label">Play X</span>
+                            <input type="number" name="playX_3840" placeholder="Default: 114">
+                        </div>
+                        <div>
+                            <span class="coord-label">Play Y</span>
+                            <input type="number" name="playY_3840" placeholder="Default: 2124">
+                        </div>
+                        <div>
+                            <span class="coord-label">Fullscreen X</span>
+                            <input type="number" name="fullscreenX_3840" placeholder="Def: 3643">
+                        </div>
+                        <div>
+                            <span class="coord-label">Fullscreen Y</span>
+                            <input type="number" name="fullscreenY_3840" placeholder="Def: 2122">
+                        </div>
+                    </div>
+                </div>
+            </details>
+
+            <button type="submit" id="submitBtn" style="margin-top: 20px;">Save & Restart</button>
         </form>
     </div>
 
     <script>
+        // WiFi Manager
+        const wifiContainer = document.getElementById('wifi-container');
+        const addWifiBtn = document.getElementById('addWifiBtn');
+        const scanStatus = document.getElementById('scanStatus');
+        const scanList = document.getElementById('wifi-scan-results');
+
+        function createWifiItem() {
+            const div = document.createElement('div');
+            div.className = 'wifi-item';
+            div.innerHTML = `
+                <div class="wifi-item-header">
+                    <button type="button" class="remove-wifi">Remove</button>
+                </div>
+                <div class="wifi-inputs">
+                    <input type="text" class="wifi-ssid" list="wifi-scan-results" placeholder="Network Name (SSID)">
+                    <input type="password" class="wifi-pass" placeholder="Password">
+                </div>
+            `;
+            
+            div.querySelector('.remove-wifi').addEventListener('click', () => {
+                div.remove();
+            });
+            
+            return div;
+        }
+
+        addWifiBtn.addEventListener('click', () => {
+            wifiContainer.appendChild(createWifiItem());
+        });
+
+        // Initialize with one empty network card
+        wifiContainer.appendChild(createWifiItem());
+
+        // Scan logic
+        async function fetchWifiScan() {
+            scanStatus.style.display = 'inline';
+            scanStatus.textContent = 'Scanning...';
+            try {
+                const res = await fetch('/provisioning/wifi-scan');
+                if (res.ok) {
+                    const networks = await res.json();
+                    scanList.innerHTML = '';
+                    networks.forEach(net => {
+                        const opt = document.createElement('option');
+                        opt.value = net.ssid;
+                        opt.label = `Signal: ${net.signal}% ${net.security ? '('+net.security+')' : ''}`;
+                        scanList.appendChild(opt);
+                    });
+                    scanStatus.textContent = networks.length > 0 ? `${networks.length} networks found` : 'No networks found';
+                    setTimeout(() => { scanStatus.style.display = 'none'; }, 3000);
+                } else {
+                    scanStatus.textContent = 'Scan failed';
+                }
+            } catch (e) {
+                console.error(e);
+                scanStatus.textContent = 'Scan error';
+            }
+        }
+
+        // Trigger scan on load
+        fetchWifiScan();
+
+        // Form Submit
         document.getElementById('setupForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const btn = document.getElementById('submitBtn');
@@ -117,10 +368,25 @@
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
 
+            // Collect WiFi networks manually
+            const networks = [];
+            document.querySelectorAll('.wifi-item').forEach(item => {
+                const ssid = item.querySelector('.wifi-ssid').value.trim();
+                const password = item.querySelector('.wifi-pass').value.trim();
+                if (ssid) {
+                    networks.push({ ssid, password });
+                }
+            });
+            
+            data.wifiNetworks = networks;
+
+            // Remove legacy fields if they were accidentally picked up
+            delete data.wifiSsid;
+            delete data.wifiPassword;
+
             try {
-                // Add a timeout to the fetch request
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
 
                 const res = await fetch('/provisioning/save', {
                     method: 'POST',
@@ -141,7 +407,6 @@
                     throw new Error(errData.error || 'Save failed');
                 }
             } catch (err) {
-                // Check for fetch failures (NetworkError, Failed to fetch) which happen when WiFi drops
                 const isNetworkError = 
                     err.name === 'AbortError' || 
                     err.message.includes('NetworkError') || 
@@ -172,4 +437,3 @@
     </script>
 </body>
 </html>
-
