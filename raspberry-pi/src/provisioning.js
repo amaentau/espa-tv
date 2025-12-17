@@ -288,6 +288,17 @@ class ProvisioningManager {
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
     console.log('💾 Saved config.json');
 
+    // Clear reboot history to prevent immediate re-triggering of provisioning mode on next boot
+    try {
+      const historyPath = path.join(__dirname, '..', '.reboot_history');
+      if (fs.existsSync(historyPath)) {
+        fs.unlinkSync(historyPath);
+        console.log('🧹 Cleared reboot history');
+      }
+    } catch (e) {
+      console.warn('⚠️ Failed to clear reboot history:', e.message);
+    }
+
     // 3. Configure WiFi
     // Support new 'wifiNetworks' array or legacy single fields
     let networks = [];
