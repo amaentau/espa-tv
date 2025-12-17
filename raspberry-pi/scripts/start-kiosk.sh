@@ -43,6 +43,14 @@ else
   wait_for_connectivity
 fi
 
+# Check for reboot loop - if 3 reboots in 45s, force provisioning mode
+if ! node "${SCRIPT_DIR}/reboot-check.js"; then
+  echo "[WARNING] Reboot loop detected! Forcing provisioning mode."
+  export FORCE_PROVISIONING=true
+else
+  echo "[INFO] Boot check passed."
+fi
+
 cd "${APP_ROOT}"
 
 exec /usr/bin/env node src/index.js

@@ -203,6 +203,14 @@
                 <small id="scanStatus" style="color: #86868b; font-size: 12px; display: none;">Scanning...</small>
             </div>
             
+            <div id="existing-wifi-list" style="margin-bottom: 15px; display: none;">
+                <label style="color: #666; font-size: 0.9em;">Currently Saved Networks:</label>
+                <div id="saved-networks" style="margin-top: 5px; font-size: 0.95em; color: #333;"></div>
+                <p style="font-size: 0.8em; color: #86868b; margin-top: 5px;">
+                    (Leave the fields below empty to keep these networks. Add a network below to configure a new one or update a password.)
+                </p>
+            </div>
+
             <div id="wifi-container">
                 <!-- WiFi items will be added here -->
             </div>
@@ -250,19 +258,19 @@
                     <div class="coord-grid">
                         <div>
                             <span class="coord-label">Play X</span>
-                            <input type="number" name="playX_1920" placeholder="Default: 77">
+                            <input type="number" name="playX_1920" placeholder="Default: 87">
                         </div>
                         <div>
                             <span class="coord-label">Play Y</span>
-                            <input type="number" name="playY_1920" placeholder="Default: 1039">
+                            <input type="number" name="playY_1920" placeholder="Default: 1032">
                         </div>
                         <div>
                             <span class="coord-label">Fullscreen X</span>
-                            <input type="number" name="fullscreenX_1920" placeholder="Def: 1759">
+                            <input type="number" name="fullscreenX_1920" placeholder="Def: 1771">
                         </div>
                         <div>
                             <span class="coord-label">Fullscreen Y</span>
-                            <input type="number" name="fullscreenY_1920" placeholder="Def: 1041">
+                            <input type="number" name="fullscreenY_1920" placeholder="Def: 1032">
                         </div>
                     </div>
                 </div>
@@ -354,8 +362,55 @@
             }
         }
 
-        // Trigger scan on load
+        // Fetch current config to pre-fill if available (e.g. forced provisioning)
+        async function fetchCurrentConfig() {
+            try {
+                const res = await fetch('/provisioning/current-config');
+                if (res.ok) {
+                    const data = await res.json();
+                    
+                    if (data.email) document.getElementById('email').value = data.email;
+                    if (data.password) document.getElementById('password').value = data.password;
+                    if (data.deviceId) document.getElementById('deviceId').value = data.deviceId;
+
+                    if (data.wifiNetworks && data.wifiNetworks.length > 0) {
+                        const list = document.getElementById('saved-networks');
+                        const container = document.getElementById('existing-wifi-list');
+                        if (list && container) {
+                            list.textContent = data.wifiNetworks.join(', ');
+                            container.style.display = 'block';
+                        }
+                    }
+
+                    if (data.coordinates) {
+                        for (const [width, coords] of Object.entries(data.coordinates)) {
+                            if (coords.play && coords.play.x) {
+                                const input = document.querySelector(`input[name="playX_${width}"]`);
+                                if (input) input.value = coords.play.x;
+                            }
+                            if (coords.play && coords.play.y) {
+                                const input = document.querySelector(`input[name="playY_${width}"]`);
+                                if (input) input.value = coords.play.y;
+                            }
+                            if (coords.fullscreen && coords.fullscreen.x) {
+                                const input = document.querySelector(`input[name="fullscreenX_${width}"]`);
+                                if (input) input.value = coords.fullscreen.x;
+                            }
+                            if (coords.fullscreen && coords.fullscreen.y) {
+                                const input = document.querySelector(`input[name="fullscreenY_${width}"]`);
+                                if (input) input.value = coords.fullscreen.y;
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to fetch current config', e);
+            }
+        }
+
+        // Trigger scan and config fetch on load
         fetchWifiScan();
+        fetchCurrentConfig();
 
         // Form Submit
         document.getElementById('setupForm').addEventListener('submit', async (e) => {

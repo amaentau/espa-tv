@@ -28,11 +28,15 @@ class VeoDongleRaspberryPi {
     // Load credentials
     this.credentials = this.loadCredentials();
 
-    // Check if provisioning is needed (missing config OR missing credentials)
-    this.needsProvisioning = !this.config || !this.credentials;
+    // Check if provisioning is needed (missing config OR missing credentials OR forced by reboot loop)
+    this.needsProvisioning = !this.config || !this.credentials || process.env.FORCE_PROVISIONING === 'true';
 
     if (this.needsProvisioning) {
-      console.log('⚠️ Missing configuration or credentials - Provisioning Mode required');
+      if (process.env.FORCE_PROVISIONING === 'true') {
+        console.log('⚠️ FORCE_PROVISIONING detected (reboot loop) - Entering Provisioning Mode');
+      } else {
+        console.log('⚠️ Missing configuration or credentials - Provisioning Mode required');
+      }
       if (!this.config) this.config = {}; // Prevent crashes
     }
 
@@ -401,7 +405,13 @@ class VeoDongleRaspberryPi {
       '--disable-infobars',
       '--disable-web-security',
       '--autoplay-policy=no-user-gesture-required',
-      '--ignore-certificate-errors'
+      '--ignore-certificate-errors',
+      '--disable-background-timer-throttling',     // keep timers consistent
+    '--disable-backgrounding-occluded-windows',  // prevent hidden tab throttling
+    '--disable-renderer-backgrounding',          // avoid frame drops
+    '--enable-features=VaapiVideoDecoder',       // enable GPU video decode (VAAPI)
+    '--use-gl=egl',                              // use EGL for rendering
+    '--ignore-gpu-blocklist',                    // force GPU acceleration
     ];
 
     // Add environment-specific flags

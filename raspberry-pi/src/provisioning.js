@@ -64,6 +64,44 @@ class ProvisioningManager {
       res.sendFile(path.join(__dirname, 'public', 'provisioning.html'));
     });
 
+    this.app.get('/provisioning/current-config', (req, res) => {
+      // Helper to safely load JSON
+      const loadJson = (p) => {
+        try {
+          if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
+        } catch (e) { console.warn(`Failed to read ${p}:`, e.message); }
+        return {};
+      };
+
+      const configPath = path.join(__dirname, '..', 'config.json');
+      const credPath = path.join(__dirname, '..', 'credentials.json');
+      
+      const config = loadJson(configPath);
+      const creds = loadJson(credPath);
+      
+      let configuredWifi = [];
+      try {
+        // List existing wifi connection profiles
+        // -t : terse
+        // -f : fields (NAME, TYPE)
+        const { stdout } = require('child_process').execSync('nmcli -t -f NAME,TYPE connection show');
+        configuredWifi = stdout.split('\n')
+          .filter(line => line.includes(':802-11-wireless'))
+          .map(line => line.split(':')[0])
+          .filter(name => name !== 'VeoHotspot'); // Exclude our hotspot
+      } catch (e) {
+        console.warn('Failed to list wifi connections:', e.message);
+      }
+
+      res.json({
+        email: creds.email || '',
+        password: creds.password || '',
+        deviceId: config.deviceId || '',
+        coordinates: config.coordinates || {},
+        wifiNetworks: configuredWifi
+      });
+    });
+
     this.app.get('/provisioning/wifi-scan', async (req, res) => {
       try {
         const networks = await this.scanWifiNetworks();
