@@ -12,6 +12,15 @@ export DISPLAY="${DISPLAY:-:0}"
 export XAUTHORITY="${HOME}/.Xauthority"
 export CHROMIUM_PATH="${CHROMIUM_PATH:-/usr/bin/chromium-browser}"
 
+# Check for reboot loop - if 3 reboots in 45s, force provisioning mode
+# Do this EARLY, before waiting for network
+if ! node "${SCRIPT_DIR}/reboot-check.js"; then
+  echo "[WARNING] Reboot loop detected! Forcing provisioning mode."
+  export FORCE_PROVISIONING=true
+else
+  echo "[INFO] Boot check passed."
+fi
+
 wait_for_connectivity() {
   local target_url="https://www.google.com/generate_204"
   local attempts=0
@@ -37,18 +46,11 @@ wait_for_connectivity() {
 }
 
 # Skip connectivity check if config.json is missing (Provisioning Mode)
-if [[ ! -f "${APP_ROOT}/config.json" ]]; then
-  echo "[INFO] config.json not found. Skipping connectivity check and entering Provisioning Mode."
+# OR if FORCE_PROVISIONING is set (Reboot Loop)
+if [[ ! -f "${APP_ROOT}/config.json" ]] || [[ "${FORCE_PROVISIONING:-false}" == "true" ]]; then
+  echo "[INFO] Entering Provisioning Mode (Config missing or Reboot Loop detected). Skipping connectivity check."
 else
   wait_for_connectivity
-fi
-
-# Check for reboot loop - if 3 reboots in 45s, force provisioning mode
-if ! node "${SCRIPT_DIR}/reboot-check.js"; then
-  echo "[WARNING] Reboot loop detected! Forcing provisioning mode."
-  export FORCE_PROVISIONING=true
-else
-  echo "[INFO] Boot check passed."
 fi
 
 cd "${APP_ROOT}"
