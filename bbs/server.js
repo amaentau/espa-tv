@@ -63,9 +63,11 @@ app.post('/entry', async (req, res) => {
   try {
     const { key, value1, value2 } = req.body || {};
 
-    if (!isNonEmptyString(key) || !isNonEmptyString(value1) || !isNonEmptyString(value2)) {
-      return res.status(400).json({ error: 'key, value1, and value2 are required strings' });
+    if (!isNonEmptyString(key) || !isNonEmptyString(value1)) {
+      return res.status(400).json({ error: 'key and value1 are required strings' });
     }
+
+    const title = (typeof value2 === 'string') ? value2.trim() : '';
 
     if (!isKeyAllowed(key)) {
       return res.status(403).json({ error: 'Key not allowed' });
@@ -83,7 +85,7 @@ app.post('/entry', async (req, res) => {
       rowKey,
       timestamp,
       value1,
-      value2
+      value2: title
     });
 
     return res.status(201).json({ ok: true, timestamp });

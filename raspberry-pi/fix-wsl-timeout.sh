@@ -7,7 +7,7 @@ echo "🔧 Fixing WSL Browser Timeout Issue"
 echo "===================================="
 echo ""
 
-cd /mnt/c/Users/amaen/source/veo_dongle/raspberry-pi
+cd /mnt/c/Users/amaen/source/espa-tv/raspberry-pi
 
 # Create a Puppeteer configuration that works better with WSL
 cat > .puppeteerrc.cjs << 'EOF'

@@ -9,7 +9,7 @@ const fs = require('fs');
 const ProvisioningManager = require('./provisioning');
 require('dotenv').config();
 
-class VeoDongleRaspberryPi {
+class EspaTvPlayer {
   constructor() {
     this.browser = null;
     this.page = null;
@@ -108,7 +108,7 @@ class VeoDongleRaspberryPi {
 
 
   async initialize() {
-    console.log('Initializing Veo Dongle Raspberry Pi...');
+    console.log('Initializing Espa-TV Player...');
 
     try {
       // Provisioning check
@@ -181,7 +181,7 @@ class VeoDongleRaspberryPi {
         }
       }
 
-      console.log(`✅ Veo Dongle ready. Access at http://localhost:${this.port}`);
+      console.log(`✅ Espa-TV Player ready. Access at http://localhost:${this.port}`);
     } catch (error) {
       console.error('❌ Initialization failed:', error.message);
       console.log('Starting recovery mode...');
@@ -1014,13 +1014,13 @@ class VeoDongleRaspberryPi {
         console.log(`Server listening on port ${this.port}`);
       });
     } catch (error) {
-      console.error('Failed to start Veo Dongle:', error);
+      console.error('Failed to start Espa-TV Player:', error);
       process.exit(1);
     }
   }
 
   async stop() {
-    console.log('Stopping Veo Dongle...');
+    console.log('Stopping Espa-TV Player...');
 
     // Stop cloud service polling
     if (this.cloudService) {
@@ -1037,25 +1037,25 @@ class VeoDongleRaspberryPi {
       this.server.close();
     }
 
-    console.log('Veo Dongle stopped');
+    console.log('Espa-TV Player stopped');
   }
 }
 
 // Handle graceful shutdown
 process.on('SIGINT', async () => {
   console.log('\nReceived SIGINT, shutting down gracefully...');
-  const veoDongle = global.veoDongleInstance;
-  if (veoDongle) {
-    await veoDongle.stop();
+  const player = global.playerInstance;
+  if (player) {
+    await player.stop();
   }
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   console.log('\nReceived SIGTERM, shutting down gracefully...');
-  const veoDongle = global.veoDongleInstance;
-  if (veoDongle) {
-    await veoDongle.stop();
+  const player = global.playerInstance;
+  if (player) {
+    await player.stop();
   }
   process.exit(0);
 });
@@ -1075,7 +1075,7 @@ process.on('uncaughtException', (error) => {
 // Command-line usage
 function printUsage() {
   console.log(`
-Veo Dongle Raspberry Pi - Stream Player
+Espa-TV Player - Stream Player
 
 Usage:
   node src/index.js [options]
@@ -1126,17 +1126,17 @@ if (require.main === module) {
   // Check for version flag
   if (process.argv.includes('--version') || process.argv.includes('-v')) {
     const packageInfo = require('../package.json');
-    console.log(`Veo Dongle Raspberry Pi v${packageInfo.version}`);
+    console.log(`Espa-TV Player v${packageInfo.version}`);
     process.exit(0);
   }
 
   // Start the application
-  const veoDongle = new VeoDongleRaspberryPi();
-  global.veoDongleInstance = veoDongle;
-  veoDongle.start().catch(error => {
-    console.error('Failed to start Veo Dongle:', error);
+  const player = new EspaTvPlayer();
+  global.playerInstance = player;
+  player.start().catch(error => {
+    console.error('Failed to start Espa-TV Player:', error);
     process.exit(1);
   });
 }
 
-module.exports = VeoDongleRaspberryPi;
+module.exports = EspaTvPlayer;

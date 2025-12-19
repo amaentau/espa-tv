@@ -7,7 +7,7 @@ set -euo pipefail
 # Usage:
 #   ./deploy-azure.sh <resource-group> <region> <storage-name> <app-name>
 # Example:
-#   ./deploy-azure.sh bbs-rg eastus bbsstor1234 bbs-web-1234
+#   ./deploy-azure.sh espa-tv-rg eastus espatvstorage espa-tv
 
 if [ $# -lt 4 ]; then
   echo "Usage: $0 <resource-group> <region> <storage-name> <app-name>"

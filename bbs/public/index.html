@@ -3,71 +3,276 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BBS</title>
+  <title>Espa TV Remote</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
-    h1 { font-size: 20px; }
-    label { display: block; margin-top: 12px; }
-    input, button { padding: 8px; font-size: 14px; }
-    button { cursor: pointer; }
-    .row { margin-top: 8px; }
-    pre { background: #f6f8fa; padding: 12px; border-radius: 6px; overflow: auto; }
+    :root {
+      --primary-color: #157039; /* Official Brand Green */
+      --primary-hover: #0a4f25;
+      --accent-color: #FCE354; /* Official Brand Yellow */
+      --bg-color: #fcfcf0;
+      --card-bg: #ffffff;
+      --text-main: #323130;
+      --text-sub: #605e5c;
+      --border-color: #e1dfdd;
+      --radius: 8px;
+      --shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      min-height: 100vh;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    header {
+      text-align: center;
+      margin-top: 20px;
+      margin-bottom: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo {
+      height: 80px;
+      width: auto;
+      object-fit: contain;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--primary-color);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 500;
+      font-size: 14px;
+      color: var(--text-main);
+    }
+
+    input {
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 16px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      box-sizing: border-box;
+      transition: border-color 0.2s;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: var(--primary-color);
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      margin-top: 8px;
+    }
+
+    button:hover {
+      background-color: var(--primary-hover);
+    }
+
+    button:disabled {
+      background-color: #c7e0f4;
+      cursor: wait;
+    }
+
+    .status-msg {
+      margin-top: 12px;
+      font-size: 14px;
+      text-align: center;
+      min-height: 20px;
+    }
+    .status-msg.success { color: green; }
+    .status-msg.error { color: #d13438; }
+
+    .history-section {
+      margin-top: 10px;
+    }
+
+    .history-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    h3 {
+      font-size: 18px;
+      margin: 0;
+      font-weight: 600;
+    }
+
+    .refresh-btn {
+      background: none;
+      color: var(--primary-color);
+      border: none;
+      padding: 0;
+      font-size: 14px;
+      cursor: pointer;
+      width: auto;
+      margin: 0;
+      font-weight: normal;
+    }
+    .refresh-btn:hover { text-decoration: underline; background: none; }
+
+    ul.history-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    li.history-item {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      border: 1px solid transparent;
+      transition: border-color 0.2s;
+    }
+
+    li.history-item:hover {
+      border-color: var(--border-color);
+    }
+
+    .item-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .item-title {
+      font-weight: 600;
+      font-size: 16px;
+      color: var(--text-main);
+    }
+
+    .item-time {
+      font-size: 12px;
+      color: var(--text-sub);
+      white-space: nowrap;
+      margin-left: 8px;
+    }
+
+    .item-url {
+      font-size: 13px;
+      color: var(--primary-color);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: block;
+      text-decoration: none;
+    }
+
+    .empty-state {
+      text-align: center;
+      color: var(--text-sub);
+      font-style: italic;
+      margin-top: 20px;
+    }
+
+    /* Simple loading spinner */
+    .loader {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid var(--primary-color);
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+      display: none;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
   </style>
   <script defer src="/script.js"></script>
   <script>
-    window.BBS_CONFIG = {
+    window.APP_CONFIG = {
       baseUrl: ''
     };
   </script>
 </head>
 <body>
-  <h1>Minimal BBS</h1>
+  <main class="container">
+    <header>
+      <img src="/logo.png" alt="EsPa Logo" class="logo">
+      <h1>ESPA TV</h1>
+    </header>
 
-  <section>
-    <h2 style="font-size:16px;">Post entry</h2>
-    <label>Key <input id="post-key" placeholder="topic-1"></label>
-    <label>Value 1 <input id="post-value1" placeholder="hello"></label>
-    <label>Value 2 <input id="post-value2" placeholder="world"></label>
-    <div class="row"><button id="post-btn">POST /entry</button></div>
-    <div class="row"><pre id="post-out"></pre></div>
-  </section>
+    <div class="card">
+      <div class="form-group">
+        <label for="deviceId">Veo-tunnus (Sähköposti)</label>
+        <input id="deviceId" type="text" placeholder="matti.meikalainen@espa.fi">
+        <p style="margin:4px 0 0; font-size:12px; color:var(--text-sub);">Syötä sähköposti, jolla laite on kirjautunut.</p>
+      </div>
 
-  <section>
-    <h2 style="font-size:16px; margin-top:24px;">Get latest 10</h2>
-    <label>Key <input id="get-key" placeholder="topic-1"></label>
-    <div class="row"><button id="get-btn">GET /entries/{key}</button></div>
-    <div class="row"><pre id="get-out"></pre></div>
-  </section>
+      <div class="form-group">
+        <label for="videoUrl">Videon osoite (URL)</label>
+        <input id="videoUrl" type="url" placeholder="https://youtube.com/...">
+      </div>
+
+      <div class="form-group">
+        <label for="videoTitle">Otsikko <span style="font-weight:normal; color:var(--text-sub)">(Valinnainen)</span></label>
+        <input id="videoTitle" type="text" placeholder="esim. Luontodokumentti">
+      </div>
+
+      <button id="sendBtn">Lisää soittolistalle</button>
+      <div id="statusMsg" class="status-msg"></div>
+    </div>
+
+    <div class="history-section">
+      <div class="history-header">
+        <h3>Viimeisimmät</h3>
+        <button id="refreshBtn" class="refresh-btn">Päivitä</button>
+      </div>
+      <div id="loader" class="loader"></div>
+      <ul id="historyList" class="history-list">
+        <!-- Items will be injected here -->
+      </ul>
+      <div id="emptyState" class="empty-state" style="display:none">Ei viimeaikaisia kohteita.</div>
+    </div>
+  </main>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

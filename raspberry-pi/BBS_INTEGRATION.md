@@ -3,7 +3,7 @@
 ## ✅ Successfully Tested and Integrated
 
 ### BBS Service Details
-- **URL**: `https://bbs-web-123.azurewebsites.net`
+- **URL**: `https://espa-tv.azurewebsites.net`
 - **Endpoint**: `GET /entries/{key}`
 - **Test Key**: `koti`
 - **Status**: ✅ **WORKING**
@@ -56,7 +56,7 @@ The `CloudService` class now supports three modes:
   "azure": {
     "storageConnectionString": "",
     "tableName": "veoDongleStreams",
-    "bbsUrl": "https://bbs-web-123.azurewebsites.net",
+    "bbsUrl": "https://espa-tv.azurewebsites.net",
     "enabled": true,
     "pollInterval": 5000,
     "retryAttempts": 3
@@ -71,7 +71,7 @@ The `CloudService` class now supports three modes:
 ### Quick Test
 ```bash
 # In WSL
-cd /mnt/c/Users/amaen/source/veo_dongle/raspberry-pi
+cd /mnt/c/Users/amaen/source/espa-tv/raspberry-pi
 
 # Simple test (no Node.js required)
 ./test-bbs-simple.sh
@@ -86,7 +86,7 @@ npm run test:cloud
 #### Get Latest Stream URL for "koti"
 ```bash
 # Using curl
-curl https://bbs-web-123.azurewebsites.net/entries/koti
+curl https://espa-tv.azurewebsites.net/entries/koti
 
 # Using the application API
 curl http://localhost:3000/cloud/latest?key=koti
@@ -153,10 +153,10 @@ curl http://localhost:3000/cloud/latest?key=koti
 ### Test BBS Endpoint Directly
 ```bash
 # Get entries for "koti"
-curl https://bbs-web-123.azurewebsites.net/entries/koti | jq
+curl https://espa-tv.azurewebsites.net/entries/koti | jq
 
 # Check BBS health
-curl https://bbs-web-123.azurewebsites.net/health
+curl https://espa-tv.azurewebsites.net/health
 ```
 
 ### Test Raspberry Pi Integration

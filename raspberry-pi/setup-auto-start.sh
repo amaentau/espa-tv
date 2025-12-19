@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_ROOT="${SCRIPT_DIR}"
 SERVICE_USER="dongle"
-SERVICE_NAME="veo-dongle"
+SERVICE_NAME="espa-tv-player"
 
 info() {
   echo -e "\e[1;34m[INFO]\e[0m $*"
@@ -28,7 +28,7 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-info "Setting up automatic startup for Veo Dongle on Raspberry Pi"
+info "Setting up automatic startup for Espa-TV Player on Raspberry Pi"
 info "This script configures systemd to start the application after boot AND network connectivity"
 
 # Verify we're on Raspberry Pi hardware
@@ -183,7 +183,7 @@ create_systemd_service() {
 
   cat >"${systemd_unit}" <<EOF
 [Unit]
-Description=Veo Dongle Kiosk (Xorg + Chromium)
+Description=Espa-TV Player Kiosk (Xorg + Chromium)
 After=network-online.target
 Wants=network-online.target
 # Removed local-fs.target dependency to avoid fsck conflicts
@@ -264,7 +264,7 @@ SERVICE_NAME="${SERVICE_NAME}"
 
 case "\${1:-status}" in
   status)
-    echo "=== Veo Dongle Service Status ==="
+    echo "=== Espa-TV Player Service Status ==="
     echo "Service: \$SERVICE_NAME"
     echo "Active: \$(systemctl is-active \$SERVICE_NAME)"
     echo "Enabled: \$(systemctl is-enabled \$SERVICE_NAME)"

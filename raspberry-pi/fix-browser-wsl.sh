@@ -84,7 +84,7 @@ print_success "System libraries installed"
 echo ""
 
 # Navigate to project directory
-cd /mnt/c/Users/amaen/source/veo_dongle/raspberry-pi
+cd /mnt/c/Users/amaen/source/espa-tv/raspberry-pi
 
 # Install/reinstall npm dependencies
 print_status "Installing npm dependencies..."

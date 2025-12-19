@@ -16,7 +16,7 @@ Run the automated fix script:
 
 ```bash
 # In WSL
-cd /mnt/c/Users/amaen/source/veo_dongle/raspberry-pi
+cd /mnt/c/Users/amaen/source/espa-tv/raspberry-pi
 chmod +x fix-browser-wsl.sh
 ./fix-browser-wsl.sh
 ```
@@ -76,7 +76,7 @@ sudo apt-get install -y \
 ### Step 3: Reinstall npm Dependencies
 
 ```bash
-cd /mnt/c/Users/amaen/source/veo_dongle/raspberry-pi
+cd /mnt/c/Users/amaen/source/espa-tv/raspberry-pi
 rm -rf node_modules
 npm install
 ```

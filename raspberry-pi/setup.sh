@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Veo Dongle Raspberry Pi - Universal Setup Script
+# Espa-TV Player - Universal Setup Script
 # This script detects the environment and runs the appropriate setup
 
 set -e  # Exit on any error
 
-echo "🚀 Veo Dongle Raspberry Pi - Setup"
+echo "🚀 Espa-TV Player - Setup"
 echo "==================================="
 
 # Colors for output

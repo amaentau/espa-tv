@@ -1,4 +1,4 @@
-# Veo Dongle (Clean)
+# Espa-TV (Clean)
 
 This repository includes only the parts required to run and publish a clean version of the project:
 
@@ -35,7 +35,7 @@ cd raspberry-pi
 npm install
 
 # Configure BBS URL in config (see config.example.js)
-# azure.bbsUrl: e.g. https://<your-app>.azurewebsites.net
+# azure.bbsUrl: e.g. https://espa-tv.azurewebsites.net
 
 # Run
 ./run.sh      # or: node src/index.js
@@ -62,7 +62,7 @@ MIT
 
 ---
 
-# Veo Dongle - Cleaned Workspace
+# Espa-TV - Cleaned Workspace
 
 This repo is focused on two active components:
 
@@ -77,7 +77,7 @@ Root npm scripts were simplified to only bbs and raspberry-pi.
 
 Legacy documentation below:
 
-# Veo Dongle - Complete IoT Streaming Solution
+# Espa-TV - Complete IoT Streaming Solution
 
 A comprehensive IoT solution for streaming Veo content with cloud-based device management and mobile control.
 
@@ -374,7 +374,7 @@ For issues and questions:
 
 ---
 
-**🎯 Your Veo Dongle system is now ready for seamless streaming control!**
+**🎯 Your Espa-TV system is now ready for seamless streaming control!**
 
 A multi-platform system for Veo stream playback and remote control, consisting of:
 
@@ -385,7 +385,7 @@ A multi-platform system for Veo stream playback and remote control, consisting o
 ## Project Structure
 
 ```
-veo-dongle/
+espa-tv/
 ├── raspberry-pi/          # Raspberry Pi component
 │   ├── src/
 │   │   ├── stream/        # Stream handling logic
@@ -650,13 +650,13 @@ npm run test:mobile
 
    ```ini
    [Unit]
-   Description=Veo Dongle Raspberry Pi Service
+   Description=Espa-TV Raspberry Pi Service
    After=network.target
 
    [Service]
    Type=simple
    User=pi
-   WorkingDirectory=/home/pi/veo-dongle/raspberry-pi
+   WorkingDirectory=/home/pi/espa-tv/raspberry-pi
    ExecStart=/usr/bin/node src/index.js
    Restart=always
 
@@ -666,8 +666,8 @@ npm run test:mobile
 
 2. Enable and start the service:
    ```bash
-   sudo systemctl enable veo-dongle
-   sudo systemctl start veo-dongle
+   sudo systemctl enable espa-tv
+   sudo systemctl start espa-tv
    ```
 
 ### Cloud Service Deployment

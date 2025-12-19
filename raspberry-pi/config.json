@@ -1,6 +1,6 @@
 {
   "azure": {
-    "bbsUrl": "https://bbs-web-123.azurewebsites.net"
+    "bbsUrl": "https://espa-tv.azurewebsites.net"
   },
   "display": {
     "modes": ["3840x2160", "1920x1080", "1280x720"],

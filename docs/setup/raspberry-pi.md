@@ -1,6 +1,6 @@
 # Raspberry Pi Setup Guide
 
-This guide will help you set up the Raspberry Pi component of the Veo Dongle system.
+This guide will help you set up the Raspberry Pi component of the Espa-TV system.
 
 ## Hardware Requirements
 
@@ -48,8 +48,8 @@ Use the curated script at `raspberry-pi/setup-lite.sh` to bootstrap a fresh Rasp
 
 ```bash
 sudo mkdir -p /home/dongle
-sudo git clone https://github.com/your-org/veo_dongle.git /home/dongle/veo_dongle
-cd /home/dongle/veo_dongle/raspberry-pi
+sudo git clone https://github.com/your-org/espa-tv.git /home/dongle/espa-tv
+cd /home/dongle/espa-tv/raspberry-pi
 sudo ./setup-lite.sh
 ```
 

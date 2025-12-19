@@ -1,5 +1,5 @@
 {
-  "name": "bbs-app",
+  "name": "espa-tv-bbs",
   "version": "1.0.0",
   "private": true,
   "description": "Minimal bulletin board service on Azure App Service using Azure Table Storage",

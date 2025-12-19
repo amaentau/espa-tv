@@ -34,7 +34,7 @@ npm --version
 echo ""
 
 # Navigate to project directory
-cd /mnt/c/Users/amaen/source/veo_dongle/raspberry-pi
+cd /mnt/c/Users/amaen/source/espa-tv/raspberry-pi
 
 echo "📦 Reinstalling project dependencies with new Node.js version..."
 echo ""

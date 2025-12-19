@@ -46,7 +46,7 @@ echo ""
 
 # Check Puppeteer installation
 echo "5. Puppeteer Configuration:"
-cd /mnt/c/Users/amaen/source/veo_dongle/raspberry-pi
+cd /mnt/c/Users/amaen/source/espa-tv/raspberry-pi
 if [ -d "node_modules/puppeteer" ]; then
     echo "✅ Puppeteer is installed"
     
