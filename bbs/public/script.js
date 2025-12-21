@@ -4,69 +4,286 @@
   const $ = (id) => document.getElementById(id);
   const baseUrl = (window.APP_CONFIG && window.APP_CONFIG.baseUrl) || '';
 
-  const els = {
-    deviceId: $('deviceId'),
-    videoUrl: $('videoUrl'),
-    videoTitle: $('videoTitle'),
-    sendBtn: $('sendBtn'),
-    statusMsg: $('statusMsg'),
-    historyList: $('historyList'),
-    loader: $('loader'),
-    refreshBtn: $('refreshBtn'),
-    emptyState: $('emptyState')
+  // --- STATE ---
+  let authState = {
+    email: '',
+    setupToken: null,
+    token: localStorage.getItem('espa_token'),
+    userEmail: localStorage.getItem('espa_email'),
+    isAdmin: localStorage.getItem('espa_is_admin') === 'true'
   };
 
-  // Helper to format date
-  function timeAgo(dateString) {
-    const date = new Date(dateString);
-    const now = new Date();
-    const seconds = Math.floor((now - date) / 1000);
-    
-    if (seconds < 60) return 'Juuri nyt';
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m sitten`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}t sitten`;
-    return date.toLocaleDateString('fi-FI');
+  // --- ELEMENTS ---
+  const views = {
+    auth: $('authContainer'),
+    app: $('appContainer'),
+    stepLookup: $('stepLookup'),
+    stepOtp: $('stepOtp'),
+    stepSetPin: $('stepSetPin'),
+    stepLogin: $('stepLogin'),
+    adminModal: $('adminModal')
+  };
+
+  const inputs = {
+    authEmail: $('authEmail'),
+    authOtp: $('authOtp'),
+    authSetPin: $('authSetPin'),
+    authLoginPin: $('authLoginPin'),
+    deviceId: $('deviceId'),
+    videoUrl: $('videoUrl'),
+    videoTitle: $('videoTitle')
+  };
+
+  const displays = {
+    otpEmail: $('displayEmailOtp'),
+    loginEmail: $('displayEmailLogin'),
+    authStatus: $('authStatus'),
+    currentUser: $('currentUserEmail'),
+    appStatus: $('statusMsg'),
+    historyList: $('historyList'),
+    loader: $('loader'),
+    emptyState: $('emptyState'),
+    adminControls: $('adminControls'),
+    adminForm: $('adminConfigForm'),
+    adminStatus: $('adminStatus')
+  };
+
+  // --- AUTH FLOW ---
+
+  function showView(viewId) {
+    ['stepLookup', 'stepOtp', 'stepSetPin', 'stepLogin'].forEach(id => {
+      if (id === viewId) views[id].classList.remove('hidden');
+      else views[id].classList.add('hidden');
+    });
+    displays.authStatus.textContent = '';
   }
 
-  // Load history for the current device ID
-  async function loadHistory() {
-    const deviceId = els.deviceId.value.trim();
-    if (!deviceId) return;
+  function setAuthStatus(msg, type = 'error') {
+    displays.authStatus.textContent = msg;
+    displays.authStatus.className = `status-msg ${type}`;
+  }
 
-    els.loader.style.display = 'block';
-    els.historyList.innerHTML = '';
-    els.emptyState.style.display = 'none';
+  function switchToApp() {
+    views.auth.classList.add('hidden');
+    views.app.classList.remove('hidden');
+    views.app.classList.add('fade-in');
+    
+    displays.currentUser.textContent = authState.userEmail;
+    
+    // Show Admin Button if Admin
+    if (authState.isAdmin) {
+      displays.adminControls.style.display = 'block';
+    } else {
+      displays.adminControls.style.display = 'none';
+    }
+    
+    // Pre-fill Device ID
+    if (!inputs.deviceId.value) {
+      inputs.deviceId.value = authState.userEmail;
+    }
+    
+    loadHistory();
+  }
+
+  function logout() {
+    authState.token = null;
+    authState.userEmail = null;
+    authState.isAdmin = false;
+    localStorage.removeItem('espa_token');
+    localStorage.removeItem('espa_email');
+    localStorage.removeItem('espa_is_admin');
+    
+    views.app.classList.add('hidden');
+    views.auth.classList.remove('hidden');
+    
+    inputs.authEmail.value = '';
+    inputs.authLoginPin.value = '';
+    showView('stepLookup');
+  }
+
+  // 1. LOOKUP
+  $('btnLookup').addEventListener('click', async () => {
+    const email = inputs.authEmail.value.trim();
+    if (!email || !email.includes('@')) {
+      return setAuthStatus('Anna kelvollinen sähköposti');
+    }
+
+    setAuthStatus('Tarkistetaan...', 'info');
+    
+    try {
+      const res = await fetch(`${baseUrl}/auth/lookup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      
+      authState.email = email;
+
+      if (data.exists) {
+        displays.loginEmail.textContent = email;
+        showView('stepLogin');
+        inputs.authLoginPin.focus();
+      } else {
+        await sendOtp(email);
+      }
+    } catch (err) {
+      setAuthStatus('Palvelinvirhe. Yritä myöhemmin.');
+      console.error(err);
+    }
+  });
+
+  async function sendOtp(email) {
+    setAuthStatus('Lähetetään koodia...', 'info');
+    try {
+      const res = await fetch(`${baseUrl}/auth/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      if (!res.ok) throw new Error();
+      
+      displays.otpEmail.textContent = email;
+      showView('stepOtp');
+      inputs.authOtp.value = '';
+      inputs.authOtp.focus();
+    } catch (err) {
+      setAuthStatus('Virhe koodin lähetyksessä.');
+    }
+  }
+
+  // 2. VERIFY OTP
+  $('btnVerifyOtp').addEventListener('click', async () => {
+    const code = inputs.authOtp.value.trim();
+    if (code.length !== 6) return setAuthStatus('Koodin on oltava 6 numeroa');
 
     try {
-      const resp = await fetch(`${baseUrl}/entries/${encodeURIComponent(deviceId)}`);
-      if (!resp.ok) throw new Error('Historiaa ei voitu hakea');
+      const res = await fetch(`${baseUrl}/auth/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: authState.email, code })
+      });
+      const data = await res.json();
       
-      const data = await resp.json();
+      if (!res.ok) throw new Error(data.error);
+
+      authState.setupToken = data.setupToken;
+      showView('stepSetPin');
+      inputs.authSetPin.focus();
+    } catch (err) {
+      setAuthStatus(err.message || 'Väärä koodi');
+    }
+  });
+
+  // 3. SET PIN
+  $('btnSetPin').addEventListener('click', async () => {
+    const pin = inputs.authSetPin.value.trim();
+    if (pin.length !== 4) return setAuthStatus('PIN-koodin on oltava 4 numeroa');
+
+    try {
+      const res = await fetch(`${baseUrl}/auth/set-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          pin, 
+          setupToken: authState.setupToken 
+        })
+      });
+      const data = await res.json();
+      
+      if (!res.ok) throw new Error(data.error);
+
+      handleLoginSuccess(data);
+    } catch (err) {
+      setAuthStatus(err.message || 'Virhe tallennuksessa');
+    }
+  });
+
+  // 4. LOGIN
+  $('btnLogin').addEventListener('click', async () => {
+    const pin = inputs.authLoginPin.value.trim();
+    if (pin.length !== 4) return setAuthStatus('Syötä 4-numeroinen PIN');
+
+    try {
+      const res = await fetch(`${baseUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: authState.email, pin })
+      });
+      const data = await res.json();
+      
+      if (!res.ok) throw new Error(data.error);
+
+      handleLoginSuccess(data);
+    } catch (err) {
+      setAuthStatus(err.message || 'Kirjautuminen epäonnistui');
+      inputs.authLoginPin.value = '';
+    }
+  });
+
+  function handleLoginSuccess(data) {
+    authState.token = data.token;
+    authState.userEmail = data.email;
+    authState.isAdmin = data.isAdmin;
+    
+    localStorage.setItem('espa_token', data.token);
+    localStorage.setItem('espa_email', data.email);
+    localStorage.setItem('espa_is_admin', data.isAdmin);
+    
+    switchToApp();
+  }
+
+  // Back / Forgot Buttons
+  $('btnBackToLookup').addEventListener('click', () => showView('stepLookup'));
+  $('btnBackToLookup2').addEventListener('click', () => {
+    inputs.authEmail.value = '';
+    showView('stepLookup');
+  });
+  
+  $('btnForgotPin').addEventListener('click', () => {
+    sendOtp(authState.email);
+  });
+
+  $('btnLogout').addEventListener('click', logout);
+
+
+  // --- APP LOGIC (Protected) ---
+
+  async function loadHistory() {
+    const deviceId = inputs.deviceId.value.trim();
+    if (!deviceId) return;
+
+    displays.loader.style.display = 'block';
+    displays.historyList.innerHTML = '';
+    displays.emptyState.style.display = 'none';
+
+    try {
+      const res = await fetch(`${baseUrl}/entries/${encodeURIComponent(deviceId)}`, {
+        headers: { 'Authorization': `Bearer ${authState.token}` }
+      });
+      
+      if (res.status === 401 || res.status === 403) { logout(); return; }
+      if (!res.ok) throw new Error('Historiaa ei voitu hakea');
+      
+      const data = await res.json();
       renderHistory(data);
     } catch (err) {
       console.error(err);
-      // Silent fail or minimal indication for history load
     } finally {
-      els.loader.style.display = 'none';
+      displays.loader.style.display = 'none';
     }
   }
 
   function renderHistory(items) {
-    els.historyList.innerHTML = '';
-    
+    displays.historyList.innerHTML = '';
     if (!items || items.length === 0) {
-      els.emptyState.style.display = 'block';
+      displays.emptyState.style.display = 'block';
       return;
     }
-
     items.forEach(item => {
-      // Mapping: value1 = URL, value2 = Title
       const url = item.value1;
-      const title = item.value2 || url; // Fallback to URL if no title
+      const title = item.value2 || url;
       const timestamp = item.timestamp;
-
       const li = document.createElement('li');
       li.className = 'history-item';
       li.innerHTML = `
@@ -76,93 +293,136 @@
         </div>
         <a href="${escapeHtml(url)}" target="_blank" class="item-url">${escapeHtml(url)}</a>
       `;
-      els.historyList.appendChild(li);
+      displays.historyList.appendChild(li);
     });
   }
 
-  function escapeHtml(text) {
-    if (!text) return '';
-    return text
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  }
+  $('sendBtn').addEventListener('click', async () => {
+    const deviceId = inputs.deviceId.value.trim();
+    const videoUrl = inputs.videoUrl.value.trim();
+    const videoTitle = inputs.videoTitle.value.trim();
 
-  function setStatus(msg, type) {
-    els.statusMsg.textContent = msg;
-    els.statusMsg.className = `status-msg ${type}`;
-    // Clear success message after 3 seconds
-    if (type === 'success') {
-      setTimeout(() => {
-        if (els.statusMsg.className.includes('success')) {
-          els.statusMsg.textContent = '';
-        }
-      }, 3000);
-    }
-  }
+    if (!deviceId) return setAppStatus('Syötä Veo-tunnus', 'error');
+    if (!videoUrl) return setAppStatus('Syötä videon osoite', 'error');
 
-  // Event Listeners
-  els.sendBtn.addEventListener('click', async () => {
-    const deviceId = els.deviceId.value.trim();
-    const videoUrl = els.videoUrl.value.trim();
-    const videoTitle = els.videoTitle.value.trim();
-
-    if (!deviceId) {
-      setStatus('Syötä Veo-tunnus', 'error');
-      return;
-    }
-    if (!videoUrl) {
-      setStatus('Syötä videon osoite', 'error');
-      return;
-    }
-
-    els.sendBtn.disabled = true;
-    setStatus('Lähetetään...', '');
+    inputs.sendBtn.disabled = true;
+    setAppStatus('Lähetetään...', '');
 
     try {
-      const resp = await fetch(`${baseUrl}/entry`, {
+      const res = await fetch(`${baseUrl}/entry`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          key: deviceId,
-          value1: videoUrl,
-          value2: videoTitle
-        })
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authState.token}`
+        },
+        body: JSON.stringify({ key: deviceId, value1: videoUrl, value2: videoTitle })
       });
 
-      if (!resp.ok) {
-        const errorData = await resp.json();
-        throw new Error(errorData.error || 'Palvelinvirhe');
-      }
+      if (res.status === 401 || res.status === 403) { logout(); return; }
+      if (!res.ok) throw new Error((await res.json()).error || 'Palvelinvirhe');
 
-      setStatus('Lisätty onnistuneesti!', 'success');
-      els.videoUrl.value = ''; // Clear URL but keep Device ID
-      els.videoTitle.value = ''; // Clear Title
-      
-      // Refresh history immediately
+      setAppStatus('Lisätty onnistuneesti!', 'success');
+      inputs.videoUrl.value = '';
+      inputs.videoTitle.value = '';
       await loadHistory();
 
     } catch (err) {
-      setStatus(`Virhe: ${err.message}`, 'error');
+      setAppStatus(`Virhe: ${err.message}`, 'error');
     } finally {
-      els.sendBtn.disabled = false;
+      inputs.sendBtn.disabled = false;
     }
   });
 
-  els.refreshBtn.addEventListener('click', loadHistory);
+  $('refreshBtn').addEventListener('click', loadHistory);
+  inputs.deviceId.addEventListener('blur', () => { if (inputs.deviceId.value.trim()) loadHistory(); });
 
-  // Auto-load history when Device ID loses focus if it has value
-  els.deviceId.addEventListener('blur', () => {
-    if (els.deviceId.value.trim()) {
-      loadHistory();
+
+  // --- ADMIN LOGIC ---
+  $('btnOpenAdmin').addEventListener('click', async () => {
+    views.adminModal.style.display = 'flex';
+    displays.adminStatus.textContent = 'Ladataan...';
+    
+    try {
+      const res = await fetch(`${baseUrl}/config/coordinates`);
+      const config = await res.json();
+      renderAdminForm(config);
+      displays.adminStatus.textContent = '';
+    } catch (err) {
+      displays.adminStatus.textContent = 'Virhe asetusten latauksessa';
     }
   });
 
-  // Initial load if default value exists
-  if (els.deviceId.value.trim()) {
-    loadHistory();
+  $('btnCloseAdmin').addEventListener('click', () => {
+    views.adminModal.style.display = 'none';
+  });
+
+  function renderAdminForm(config) {
+    let html = '';
+    for (const [res, coords] of Object.entries(config)) {
+      html += `
+        <div style="border-bottom:1px solid #eee; padding-bottom:12px; margin-bottom:12px;">
+          <h3 style="margin-bottom:8px;">${res}p</h3>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+            <label>Play X <input type="number" class="admin-input" data-res="${res}" data-key="play.x" value="${coords.play.x}"></label>
+            <label>Play Y <input type="number" class="admin-input" data-res="${res}" data-key="play.y" value="${coords.play.y}"></label>
+            <label>Full X <input type="number" class="admin-input" data-res="${res}" data-key="fullscreen.x" value="${coords.fullscreen.x}"></label>
+            <label>Full Y <input type="number" class="admin-input" data-res="${res}" data-key="fullscreen.y" value="${coords.fullscreen.y}"></label>
+          </div>
+        </div>
+      `;
+    }
+    displays.adminForm.innerHTML = html;
   }
+
+  $('btnSaveAdmin').addEventListener('click', async () => {
+    const newConfig = { 1280: { play:{}, fullscreen:{} }, 1920: { play:{}, fullscreen:{} }, 3840: { play:{}, fullscreen:{} } };
+    
+    document.querySelectorAll('.admin-input').forEach(input => {
+      const res = input.dataset.res;
+      const [group, axis] = input.dataset.key.split('.');
+      newConfig[res][group][axis] = parseInt(input.value, 10);
+    });
+
+    displays.adminStatus.textContent = 'Tallennetaan...';
+    try {
+      const res = await fetch(`${baseUrl}/config/coordinates`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authState.token}`
+        },
+        body: JSON.stringify(newConfig)
+      });
+      
+      if (!res.ok) throw new Error();
+      displays.adminStatus.textContent = 'Tallennettu onnistuneesti!';
+      setTimeout(() => views.adminModal.style.display = 'none', 1000);
+    } catch (err) {
+      displays.adminStatus.textContent = 'Virhe tallennuksessa';
+    }
+  });
+
+  // Helpers
+  function setAppStatus(msg, type) {
+    displays.appStatus.textContent = msg;
+    displays.appStatus.className = `status-msg ${type}`;
+    if (type === 'success') setTimeout(() => { if (displays.appStatus.className.includes('success')) displays.appStatus.textContent = ''; }, 3000);
+  }
+  function escapeHtml(text) { if (!text) return ''; return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
+  function timeAgo(dateString) {
+    const date = new Date(dateString);
+    const now = new Date();
+    const seconds = Math.floor((now - date) / 1000);
+    if (seconds < 60) return 'Juuri nyt';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m sitten`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}t sitten`;
+    return date.toLocaleDateString('fi-FI');
+  }
+
+  // --- INIT ---
+  if (authState.token && authState.userEmail) { switchToApp(); }
+  else { showView('stepLookup'); }
 
 })();
