@@ -7,6 +7,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const ProvisioningManager = require('./provisioning');
+const CloudService = require('./cloud-service');
 require('dotenv').config();
 
 class EspaTvPlayer {
@@ -62,6 +63,10 @@ class EspaTvPlayer {
     this.streamUrl = null;
     this.port = this.config.port || process.env.PORT || 3000;
     this.debug = process.env.DEBUG === 'true';
+
+    // Initialize cloud service
+    this.cloudService = new CloudService(this.config);
+    this.cloudCoordinates = null;
   }
 
   tryLoadConfig() {
@@ -124,16 +129,30 @@ class EspaTvPlayer {
         this.streamUrl = process.env.STREAM_URL;
         console.log(`🎯 Using configured Stream URL: ${this.streamUrl}`);
       } else {
-        // Fetch stream URL from BBS
+        // Initialize cloud service and fetch stream URL + coordinates
+        await this.cloudService.initialize();
+        
         const bbsKey = process.env.BBS_KEY || 'koti';
-        console.log(`🔍 Fetching stream URL from BBS (key: ${bbsKey})...`);
-        const bbsUrl = await this.fetchBbsStreamUrlOnce(bbsKey);
+        console.log(`🔍 Fetching stream URL and coordinates from BBS (key: ${bbsKey})...`);
+        
+        const [bbsUrl, coords] = await Promise.all([
+          this.fetchBbsStreamUrlOnce(bbsKey),
+          this.cloudService.getCoordinates()
+        ]);
         
         if (bbsUrl) {
           this.streamUrl = bbsUrl;
           console.log(`🎯 Using stream URL from BBS: ${this.streamUrl}`);
         } else {
            console.log(`⚠️ No stream URL found on BBS for key "${bbsKey}"`);
+        }
+
+        if (coords) {
+          this.cloudCoordinates = coords;
+          console.log('📍 Using coordinates from cloud');
+        } else {
+          console.log('⚠️ No coordinates found in cloud, falling back to local config');
+          this.cloudCoordinates = this.config.coordinates;
         }
       }
 
@@ -278,7 +297,13 @@ class EspaTvPlayer {
       currentWidth = (this.config.viewport && this.config.viewport.width) || 1920;
     }
 
-    const bases = Object.keys(this.config.coordinates || {}).map(n => parseInt(n, 10)).sort((a, b) => a - b);
+    const coordsSource = this.cloudCoordinates || this.config.coordinates || {};
+    const bases = Object.keys(coordsSource).map(n => parseInt(n, 10)).sort((a, b) => a - b);
+    
+    if (bases.length === 0) {
+      throw new Error('No coordinates available (cloud or local)');
+    }
+
     let chosenWidth = bases[0];
     let minDiff = Math.abs(currentWidth - bases[0]);
     for (const bw of bases) {
@@ -286,7 +311,7 @@ class EspaTvPlayer {
       if (d < minDiff) { minDiff = d; chosenWidth = bw; }
     }
 
-    const ref = this.config.coordinates[chosenWidth];
+    const ref = coordsSource[chosenWidth];
     const base = ref && ref[action];
     if (!base) throw new Error(`No coordinates for action '${action}'`);
 

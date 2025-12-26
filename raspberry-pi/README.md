@@ -106,24 +106,42 @@ PORT=3000
 CLOUD_URL=http://localhost:4000
 
 # Device Configuration
-DEVICE_ID=raspberry-pi-prod
-
-# Azure Table Storage Configuration (recommended)
-AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=youraccount;AccountKey=yourkey;EndpointSuffix=core.windows.net
-AZURE_TABLE_NAME=veoDongleStreams
-AZURE_STORAGE_ENABLED=true
-AZURE_POLL_INTERVAL=30000
-AZURE_RETRY_ATTEMPTS=3
-
-# Environment
-NODE_ENV=production
+DEVICE_ID=raspberry-pi-001
+BBS_URL=https://espa-tv-app.azurewebsites.net
+BBS_KEY=koti
 ```
+
+### Local Provisioning Mode
+If the application starts without a `config.json` or `credentials.json`, it enters **Provisioning Mode**.
+1. It creates a WiFi hotspot named **VeoSetup** (password: `veo12345`).
+2. Connect to this hotspot and open `http://10.42.0.1:3000` in your browser.
+3. Configure your Veo account, WiFi networks, and Device ID.
+4. Click **Save & Restart**.
+
+Note: Manual coordinate adjustment has been removed from provisioning and is now managed centrally via the Azure service.
+
+### Centralized Configuration
+Click coordinates for the Veo player are now fetched automatically from the Azure service at startup. This allows for remote maintenance without updating individual devices.
+
+- **Endpoint**: `https://espa-tv-app.azurewebsites.net/config/coordinates`
+- **Managed by**: Administrative Web UI on the Azure service.
+
+---
+
+## ☁️ Cloud Service Integration (BBS)
+
+The application polls the **ESPA TV BBS** (Bulletin Board Service) for stream updates.
+
+- **BBS URL**: `https://espa-tv-app.azurewebsites.net`
+- **Default Key**: `koti` (can be overridden via `BBS_KEY` env var)
 
 ### Stream Configuration (config.json)
 
 ```json
 {
-  "veoStreamUrl": "https://live.veo.co/stream/YOUR_STREAM_ID",
+  "azure": {
+    "bbsUrl": "https://espa-tv-app.azurewebsites.net"
+  },
   "port": 3000,
   "viewport": {
     "width": 1920,
@@ -132,21 +150,6 @@ NODE_ENV=production
   "login": {
     "url": "https://live.veo.co/login",
     "enabled": true
-  },
-  "coordinates": {
-    "click": { "x": 100, "y": 100 },
-    "fullscreen": { "x": 1765, "y": 1045 },
-    "playback": { "x": 45, "y": 1052 }
-  },
-  "chromium": {
-    "headless": false,
-    "args": [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--start-fullscreen",
-      "--kiosk"
-    ]
   }
 }
 ```

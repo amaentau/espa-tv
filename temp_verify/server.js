@@ -80,10 +80,6 @@ class MockTableClient {
     else mockDb[this.tableName].push(entity);
   }
 
-  async createEntity(entity) {
-    return this.upsertEntity(entity);
-  }
-
   async updateEntity(entity, mode) {
     await this.upsertEntity(entity);
   }

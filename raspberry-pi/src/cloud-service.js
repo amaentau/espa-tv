@@ -308,6 +308,43 @@ class CloudService {
   }
 
   /**
+   * Retrieve click coordinates from the cloud
+   */
+  async getCoordinates() {
+    const maxRetries = (this.config.azure && this.config.azure.retryAttempts) || 3;
+
+    if (this.useBbsHttp && this.bbsUrl) {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const url = `${this.bbsUrl}/config/coordinates`;
+          console.log(`📡 [BBS HTTP] Fetching coordinates from: ${url}`);
+          
+          const response = await fetch(url);
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          
+          const coordinates = await response.json();
+          console.log('📍 [BBS HTTP] Retrieved coordinates from cloud');
+          return coordinates;
+        } catch (error) {
+          console.error(`❌ BBS HTTP coordinates retrieve attempt ${attempt} failed:`, error.message);
+          
+          if (attempt < maxRetries) {
+            const delay = Math.min(1000 * attempt, 10000);
+            await this.sleep(delay);
+          } else {
+            console.error('❌ All BBS HTTP coordinates retrieve attempts failed');
+            return null; // Fallback to local if possible, but user wants centralized
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
    * Start polling for stream URL updates
    */
   startPolling() {

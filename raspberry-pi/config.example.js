@@ -31,12 +31,6 @@ module.exports = {
     enabled: process.env.LOGIN_ENABLED === 'true'
   },
 
-  coordinates: {
-    click: { x: 100, y: 100 },
-    fullscreen: { x: 1765, y: 1045 },
-    playback: { x: 45, y: 1052 }
-  },
-
   browser: {
     executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium-browser',
     headless: false,

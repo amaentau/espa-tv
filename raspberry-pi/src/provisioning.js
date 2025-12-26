@@ -128,7 +128,6 @@ class ProvisioningManager {
         email: creds.email || '',
         password: creds.password || '',
         deviceId: config.deviceId || '',
-        coordinates: config.coordinates || {},
         wifiNetworks: configuredWifi
       });
     });
@@ -268,7 +267,7 @@ class ProvisioningManager {
     // Ensure nested objects exist
     config.azure = config.azure || {};
     if (data.bbsUrl) config.azure.bbsUrl = data.bbsUrl;
-    if (!config.azure.bbsUrl) config.azure.bbsUrl = "https://bbs-web-123.azurewebsites.net/";
+    if (!config.azure.bbsUrl) config.azure.bbsUrl = "https://espa-tv-app.azurewebsites.net";
 
     config.display = config.display || {};
     if (!config.display.preferredMode) config.display.preferredMode = "auto";
@@ -277,60 +276,6 @@ class ProvisioningManager {
     config.viewport = config.viewport || {};
     if (!config.viewport.width) config.viewport.width = 1920;
     if (!config.viewport.height) config.viewport.height = 1080;
-
-    // Handle Coordinates
-    const defaults = {
-      1280: { play: { x: 63, y: 681 }, fullscreen: { x: 1136, y: 678 } },
-      1920: { play: { x: 87, y: 1032 }, fullscreen: { x: 1771, y: 1032 } },
-      3840: { play: { x: 114, y: 2124 }, fullscreen: { x: 3643, y: 2122 } }
-    };
-
-    config.coordinates = config.coordinates || {};
-
-    // 1. Ensure defaults exist for any missing resolution
-    for (const [width, def] of Object.entries(defaults)) {
-      if (!config.coordinates[width]) {
-        console.log(`📍 Initializing default coordinates for ${width}px`);
-        config.coordinates[width] = {
-          play: { ...def.play },
-          fullscreen: { ...def.fullscreen },
-          baseWidth: parseInt(width)
-        };
-      }
-    }
-
-    // 2. Apply user updates from request (Advanced UI)
-    // Expected format: playX_1920, playY_1920, etc.
-    const resolutions = [1280, 1920, 3840];
-    let coordsUpdated = false;
-
-    resolutions.forEach(res => {
-      const px = data[`playX_${res}`];
-      const py = data[`playY_${res}`];
-      const fx = data[`fullscreenX_${res}`];
-      const fy = data[`fullscreenY_${res}`];
-
-      // Only update if value is provided and non-empty
-      if ((px !== undefined && px !== '') || 
-          (py !== undefined && py !== '') || 
-          (fx !== undefined && fx !== '') || 
-          (fy !== undefined && fy !== '')) {
-        
-        coordsUpdated = true;
-        const target = config.coordinates[res]; // Guaranteed to exist by step 1
-        
-        if (px !== undefined && px !== '') target.play.x = parseInt(px);
-        if (py !== undefined && py !== '') target.play.y = parseInt(py);
-        if (fx !== undefined && fx !== '') target.fullscreen.x = parseInt(fx);
-        if (fy !== undefined && fy !== '') target.fullscreen.y = parseInt(fy);
-        
-        console.log(`📍 Updated custom coordinates for ${res}px`);
-      }
-    });
-
-    if (!coordsUpdated) {
-      console.log('📍 No manual coordinate adjustments provided, keeping existing/defaults');
-    }
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
     console.log('💾 Saved config.json');

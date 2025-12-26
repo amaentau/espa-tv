@@ -3,8 +3,9 @@
 ## ✅ Successfully Tested and Integrated
 
 ### BBS Service Details
-- **URL**: `https://espa-tv.azurewebsites.net`
+- **URL**: `https://espa-tv-app.azurewebsites.net`
 - **Endpoint**: `GET /entries/{key}`
+- **Config**: `GET /config/coordinates`
 - **Test Key**: `koti`
 - **Status**: ✅ **WORKING**
 
@@ -16,6 +17,15 @@
   "value1": "https://live.veo.co/stream/8526b303-fb9f-4088-aecc-146eb39403d6@1761148340958",
   "value2": "https://live.veo.co/stream/8526b303-fb9f-4088-aecc-146eb39403d6@1761148340958",
   "timestamp": "2025-10-25T13:13:29.9697218Z"
+}
+```
+
+#### Centralized Configuration (Coordinates):
+```json
+{
+  "1280": { "play": { "x": 63, "y": 681 }, "fullscreen": { "x": 1136, "y": 678 }, "baseWidth": 1280 },
+  "1920": { "play": { "x": 77, "y": 1039 }, "fullscreen": { "x": 1759, "y": 1041 }, "baseWidth": 1920 },
+  "3840": { "play": { "x": 114, "y": 2124 }, "fullscreen": { "x": 3643, "y": 2122 }, "baseWidth": 3840 }
 }
 ```
 
@@ -56,7 +66,7 @@ The `CloudService` class now supports three modes:
   "azure": {
     "storageConnectionString": "",
     "tableName": "veoDongleStreams",
-    "bbsUrl": "https://espa-tv.azurewebsites.net",
+    "bbsUrl": "https://espa-tv-app.azurewebsites.net",
     "enabled": true,
     "pollInterval": 5000,
     "retryAttempts": 3
@@ -86,10 +96,16 @@ npm run test:cloud
 #### Get Latest Stream URL for "koti"
 ```bash
 # Using curl
-curl https://espa-tv.azurewebsites.net/entries/koti
+curl https://espa-tv-app.azurewebsites.net/entries/koti
 
 # Using the application API
 curl http://localhost:3000/cloud/latest?key=koti
+```
+
+#### Get Centralized Coordinates
+```bash
+# Using curl
+curl https://espa-tv-app.azurewebsites.net/config/coordinates
 ```
 
 #### Expected Response
@@ -116,6 +132,7 @@ curl http://localhost:3000/cloud/latest?key=koti
 └────────┬────────┘
          │
          │ HTTP GET /entries/koti
+         │ HTTP GET /config/coordinates
          │
          ▼
 ┌─────────────────┐
@@ -140,7 +157,7 @@ curl http://localhost:3000/cloud/latest?key=koti
 
 ### Polling Mechanism
 
-1. **Initialization**: Cloud service connects to BBS endpoint
+1. **Initialization**: Cloud service connects to BBS endpoint and fetches coordinates
 2. **Polling**: Every 5 seconds, fetches latest entry for "koti" key
 3. **Detection**: Compares with last known URL
 4. **Update**: If different, triggers stream update callback
@@ -153,10 +170,13 @@ curl http://localhost:3000/cloud/latest?key=koti
 ### Test BBS Endpoint Directly
 ```bash
 # Get entries for "koti"
-curl https://espa-tv.azurewebsites.net/entries/koti | jq
+curl https://espa-tv-app.azurewebsites.net/entries/koti | jq
+
+# Get coordinates
+curl https://espa-tv-app.azurewebsites.net/config/coordinates | jq
 
 # Check BBS health
-curl https://espa-tv.azurewebsites.net/health
+curl https://espa-tv-app.azurewebsites.net/health
 ```
 
 ### Test Raspberry Pi Integration

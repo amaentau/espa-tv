@@ -31,8 +31,7 @@
     authLoginPin: $('authLoginPin'),
     deviceId: $('deviceId'),
     videoUrl: $('videoUrl'),
-    videoTitle: $('videoTitle'),
-    sendBtn: $('sendBtn')
+    videoTitle: $('videoTitle')
   };
 
   const displays = {

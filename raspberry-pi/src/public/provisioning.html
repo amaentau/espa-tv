@@ -134,55 +134,6 @@
             padding: 0;
         }
 
-        /* Advanced Coords */
-        details {
-            margin-top: 30px;
-            border-top: 1px solid #e5e5e5;
-            padding-top: 15px;
-        }
-        summary {
-            cursor: pointer;
-            color: #0071e3;
-            font-weight: 500;
-            font-size: 0.95rem;
-            outline: none;
-            user-select: none;
-        }
-        .advanced-note {
-            font-size: 0.8em;
-            color: #666;
-            margin: 10px 0 15px 0;
-            line-height: 1.4;
-        }
-        .coord-section {
-            background: #f9f9f9;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 12px;
-            border: 1px solid #eee;
-        }
-        .coord-header {
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 8px;
-        }
-        .coord-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-        }
-        .coord-grid input {
-            font-size: 13px;
-            padding: 8px;
-        }
-        .coord-label {
-            font-size: 0.75em;
-            color: #888;
-            margin-bottom: 2px;
-            display: block;
-        }
-        
         .scan-results {
             margin-top: 10px;
             display: flex;
@@ -247,80 +198,6 @@
                 <label for="deviceId">Device ID</label>
                 <input type="text" id="deviceId" name="deviceId" placeholder="raspberry-pi-...">
             </div>
-
-            <details>
-                <summary>Advanced: Manual Click Coordinates</summary>
-                <p class="advanced-note">
-                    Use these fields only if the Veo player layout has changed. 
-                    Leave empty to use existing or default values.
-                </p>
-
-                <div class="coord-section">
-                    <div class="coord-header">HD (1280x720)</div>
-                    <div class="coord-grid">
-                        <div>
-                            <span class="coord-label">Play X</span>
-                            <input type="number" name="playX_1280" placeholder="Default: 63">
-                        </div>
-                        <div>
-                            <span class="coord-label">Play Y</span>
-                            <input type="number" name="playY_1280" placeholder="Default: 681">
-                        </div>
-                        <div>
-                            <span class="coord-label">Fullscreen X</span>
-                            <input type="number" name="fullscreenX_1280" placeholder="Def: 1136">
-                        </div>
-                        <div>
-                            <span class="coord-label">Fullscreen Y</span>
-                            <input type="number" name="fullscreenY_1280" placeholder="Def: 678">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="coord-section">
-                    <div class="coord-header">Full HD (1920x1080)</div>
-                    <div class="coord-grid">
-                        <div>
-                            <span class="coord-label">Play X</span>
-                            <input type="number" name="playX_1920" placeholder="Default: 87">
-                        </div>
-                        <div>
-                            <span class="coord-label">Play Y</span>
-                            <input type="number" name="playY_1920" placeholder="Default: 1032">
-                        </div>
-                        <div>
-                            <span class="coord-label">Fullscreen X</span>
-                            <input type="number" name="fullscreenX_1920" placeholder="Def: 1771">
-                        </div>
-                        <div>
-                            <span class="coord-label">Fullscreen Y</span>
-                            <input type="number" name="fullscreenY_1920" placeholder="Def: 1032">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="coord-section">
-                    <div class="coord-header">4K (3840x2160)</div>
-                    <div class="coord-grid">
-                        <div>
-                            <span class="coord-label">Play X</span>
-                            <input type="number" name="playX_3840" placeholder="Default: 114">
-                        </div>
-                        <div>
-                            <span class="coord-label">Play Y</span>
-                            <input type="number" name="playY_3840" placeholder="Default: 2124">
-                        </div>
-                        <div>
-                            <span class="coord-label">Fullscreen X</span>
-                            <input type="number" name="fullscreenX_3840" placeholder="Def: 3643">
-                        </div>
-                        <div>
-                            <span class="coord-label">Fullscreen Y</span>
-                            <input type="number" name="fullscreenY_3840" placeholder="Def: 2122">
-                        </div>
-                    </div>
-                </div>
-            </details>
 
             <button type="submit" id="submitBtn" style="margin-top: 20px;">Save & Restart</button>
         </form>
@@ -467,27 +344,6 @@
                         if (list && container) {
                             list.textContent = data.wifiNetworks.join(', ');
                             container.style.display = 'block';
-                        }
-                    }
-
-                    if (data.coordinates) {
-                        for (const [width, coords] of Object.entries(data.coordinates)) {
-                            if (coords.play && coords.play.x) {
-                                const input = document.querySelector(`input[name="playX_${width}"]`);
-                                if (input) input.value = coords.play.x;
-                            }
-                            if (coords.play && coords.play.y) {
-                                const input = document.querySelector(`input[name="playY_${width}"]`);
-                                if (input) input.value = coords.play.y;
-                            }
-                            if (coords.fullscreen && coords.fullscreen.x) {
-                                const input = document.querySelector(`input[name="fullscreenX_${width}"]`);
-                                if (input) input.value = coords.fullscreen.x;
-                            }
-                            if (coords.fullscreen && coords.fullscreen.y) {
-                                const input = document.querySelector(`input[name="fullscreenY_${width}"]`);
-                                if (input) input.value = coords.fullscreen.y;
-                            }
                         }
                     }
                 }
