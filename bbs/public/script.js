@@ -10,7 +10,8 @@
     setupToken: null,
     token: localStorage.getItem('espa_token'),
     userEmail: localStorage.getItem('espa_email'),
-    isAdmin: localStorage.getItem('espa_is_admin') === 'true'
+    isAdmin: localStorage.getItem('espa_is_admin') === 'true',
+    devices: []
   };
 
   // --- ELEMENTS ---
@@ -21,7 +22,9 @@
     stepOtp: $('stepOtp'),
     stepSetPin: $('stepSetPin'),
     stepLogin: $('stepLogin'),
-    adminModal: $('adminModal')
+    adminModal: $('adminModal'),
+    claimModal: $('claimModal'),
+    shareModal: $('shareModal')
   };
 
   const inputs = {
@@ -29,10 +32,13 @@
     authOtp: $('authOtp'),
     authSetPin: $('authSetPin'),
     authLoginPin: $('authLoginPin'),
-    deviceId: $('deviceId'),
+    deviceSelect: $('deviceSelect'),
     videoUrl: $('videoUrl'),
     videoTitle: $('videoTitle'),
-    sendBtn: $('sendBtn')
+    sendBtn: $('sendBtn'),
+    claimDeviceId: $('claimDeviceId'),
+    claimFriendlyName: $('claimFriendlyName'),
+    shareEmail: $('shareEmailInput')
   };
 
   const displays = {
@@ -78,12 +84,7 @@
       displays.adminControls.style.display = 'none';
     }
     
-    // Pre-fill Device ID
-    if (!inputs.deviceId.value) {
-      inputs.deviceId.value = authState.userEmail;
-    }
-    
-    loadHistory();
+    loadDevices();
   }
 
   function logout() {
@@ -250,9 +251,60 @@
 
   // --- APP LOGIC (Protected) ---
 
+  async function loadDevices() {
+    try {
+      const res = await fetch(`${baseUrl}/devices`, {
+        headers: { 'Authorization': `Bearer ${authState.token}` }
+      });
+      if (res.status === 401 || res.status === 403) { logout(); return; }
+      const devices = await res.json();
+      authState.devices = devices;
+      renderDeviceSelect();
+      if (devices.length > 0) {
+        loadHistory();
+      }
+    } catch (err) {
+      console.error('Failed to load devices:', err);
+    }
+  }
+
+  function renderDeviceSelect() {
+    const select = inputs.deviceSelect;
+    select.innerHTML = '';
+    
+    if (authState.devices.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'Ei laitteita - lisää uusi';
+      select.appendChild(opt);
+      return;
+    }
+
+    authState.devices.forEach(dev => {
+      const opt = document.createElement('option');
+      opt.value = dev.id;
+      opt.textContent = dev.friendlyName || dev.id;
+      select.appendChild(opt);
+    });
+
+    updateShareButtonVisibility();
+  }
+
+  function updateShareButtonVisibility() {
+    const deviceId = inputs.deviceSelect.value;
+    const currentDevice = authState.devices.find(d => d.id === deviceId);
+    if (currentDevice && currentDevice.role === 'master') {
+      $('btnOpenShare').style.display = 'flex';
+    } else {
+      $('btnOpenShare').style.display = 'none';
+    }
+  }
+
   async function loadHistory() {
-    const deviceId = inputs.deviceId.value.trim();
+    const deviceId = inputs.deviceSelect.value;
     if (!deviceId) return;
+    
+    updateShareButtonVisibility();
 
     displays.loader.style.display = 'block';
     displays.historyList.innerHTML = '';
@@ -299,11 +351,11 @@
   }
 
   $('sendBtn').addEventListener('click', async () => {
-    const deviceId = inputs.deviceId.value.trim();
+    const deviceId = inputs.deviceSelect.value;
     const videoUrl = inputs.videoUrl.value.trim();
     const videoTitle = inputs.videoTitle.value.trim();
 
-    if (!deviceId) return setAppStatus('Syötä Veo-tunnus', 'error');
+    if (!deviceId) return setAppStatus('Valitse laite ensin', 'error');
     if (!videoUrl) return setAppStatus('Syötä videon osoite', 'error');
 
     inputs.sendBtn.disabled = true;
@@ -335,7 +387,7 @@
   });
 
   $('refreshBtn').addEventListener('click', loadHistory);
-  inputs.deviceId.addEventListener('blur', () => { if (inputs.deviceId.value.trim()) loadHistory(); });
+  inputs.deviceSelect.addEventListener('change', loadHistory);
 
 
   // --- ADMIN LOGIC ---
@@ -402,6 +454,163 @@
       displays.adminStatus.textContent = 'Virhe tallennuksessa';
     }
   });
+
+  // --- CLAIM DEVICE LOGIC ---
+  $('btnOpenClaim').addEventListener('click', () => {
+    views.claimModal.style.display = 'flex';
+    inputs.claimDeviceId.value = '';
+    inputs.claimFriendlyName.value = '';
+    $('claimStatus').textContent = '';
+  });
+
+  $('btnCloseClaim').addEventListener('click', () => {
+    views.claimModal.style.display = 'none';
+  });
+
+  $('btnSaveClaim').addEventListener('click', async () => {
+    const deviceId = inputs.claimDeviceId.value.trim();
+    const friendlyName = inputs.claimFriendlyName.value.trim();
+    const status = $('claimStatus');
+
+    if (!deviceId) {
+      status.textContent = 'Syötä laitteen ID';
+      status.className = 'status-msg error';
+      return;
+    }
+
+    status.textContent = 'Tallennetaan...';
+    status.className = 'status-msg info';
+
+    try {
+      const res = await fetch(`${baseUrl}/devices/claim`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authState.token}`
+        },
+        body: JSON.stringify({ deviceId, friendlyName })
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Virhe tallennuksessa');
+
+      status.textContent = 'Laite lisätty!';
+      status.className = 'status-msg success';
+      
+      await loadDevices(); // Refresh list
+      setTimeout(() => views.claimModal.style.display = 'none', 1000);
+    } catch (err) {
+      status.textContent = err.message;
+      status.className = 'status-msg error';
+    }
+  });
+
+  // --- SHARING LOGIC ---
+  $('btnOpenShare').addEventListener('click', async () => {
+    const deviceId = inputs.deviceSelect.value;
+    const device = authState.devices.find(d => d.id === deviceId);
+    if (!device) return;
+
+    $('shareDeviceName').textContent = device.friendlyName || deviceId;
+    views.shareModal.style.display = 'flex';
+    $('shareStatus').textContent = '';
+    inputs.shareEmail.value = '';
+    
+    loadShares(deviceId);
+  });
+
+  $('btnCloseShare').addEventListener('click', () => {
+    views.shareModal.style.display = 'none';
+  });
+
+  async function loadShares(deviceId) {
+    const list = $('shareList');
+    list.innerHTML = '<li style="padding:12px; font-size:13px; color:var(--text-sub);">Ladataan...</li>';
+
+    try {
+      const res = await fetch(`${baseUrl}/devices/${encodeURIComponent(deviceId)}/shares`, {
+        headers: { 'Authorization': `Bearer ${authState.token}` }
+      });
+      if (!res.ok) throw new Error();
+      const shares = await res.json();
+      
+      list.innerHTML = '';
+      if (shares.length === 0) {
+        list.innerHTML = '<li style="padding:12px; font-size:13px; color:var(--text-sub);">Ei jaettuja käyttöoikeuksia.</li>';
+        return;
+      }
+
+      shares.forEach(share => {
+        const li = document.createElement('li');
+        li.style.cssText = 'padding:8px 12px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; font-size:14px;';
+        
+        const isMaster = share.role === 'master';
+        li.innerHTML = `
+          <span>
+            ${escapeHtml(share.email)} 
+            <small style="color:var(--text-sub); font-size:11px;">(${isMaster ? 'Omistaja' : 'Käyttäjä'})</small>
+          </span>
+          ${!isMaster ? `<button class="remove-share" data-email="${share.email}" style="width:auto; margin:0; padding:4px 8px; background-color:#d13438; font-size:12px;">Poista</button>` : ''}
+        `;
+        list.appendChild(li);
+      });
+
+      // Add delete listeners
+      list.querySelectorAll('.remove-share').forEach(btn => {
+        btn.addEventListener('click', () => removeShare(deviceId, btn.dataset.email));
+      });
+
+    } catch (err) {
+      list.innerHTML = '<li style="padding:12px; font-size:13px; color:#d13438;">Virhe latauksessa.</li>';
+    }
+  }
+
+  $('btnDoShare').addEventListener('click', async () => {
+    const deviceId = inputs.deviceSelect.value;
+    const email = inputs.shareEmail.value.trim();
+    const status = $('shareStatus');
+
+    if (!email) return;
+
+    status.textContent = 'Lisätään...';
+    status.className = 'status-msg info';
+
+    try {
+      const res = await fetch(`${baseUrl}/devices/${encodeURIComponent(deviceId)}/share`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authState.token}`
+        },
+        body: JSON.stringify({ email })
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Virhe');
+
+      status.textContent = 'Käyttäjä lisätty!';
+      status.className = 'status-msg success';
+      inputs.shareEmail.value = '';
+      loadShares(deviceId);
+    } catch (err) {
+      status.textContent = err.message;
+      status.className = 'status-msg error';
+    }
+  });
+
+  async function removeShare(deviceId, targetEmail) {
+    if (!confirm(`Poistetaanko käyttäjän ${targetEmail} käyttöoikeus?`)) return;
+
+    try {
+      const res = await fetch(`${baseUrl}/devices/${encodeURIComponent(deviceId)}/share/${encodeURIComponent(targetEmail)}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${authState.token}` }
+      });
+      if (!res.ok) throw new Error();
+      loadShares(deviceId);
+    } catch (err) {
+      alert('Poisto epäonnistui');
+    }
+  }
+
 
   // Helpers
   function setAppStatus(msg, type) {

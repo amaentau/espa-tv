@@ -47,7 +47,7 @@ class EspaTvPlayer {
     }
 
     // Device configuration (allow configuration file to drive the default ID)
-    this.deviceId = this.config.deviceId || process.env.DEVICE_ID || `raspberry-pi-${Date.now()}`;
+    this.deviceId = this.getPersistentDeviceId();
 
     console.log(`🔐 Credentials loaded: ${this.credentials ? 'YES' : 'NO'}`);
     if (this.credentials) {
@@ -111,6 +111,73 @@ class EspaTvPlayer {
   }
 
 
+
+  getPersistentDeviceId() {
+    if (this.config.deviceId) return this.config.deviceId;
+    if (process.env.DEVICE_ID) return process.env.DEVICE_ID;
+
+    try {
+      // Try to get Raspberry Pi Serial Number
+      if (fs.existsSync('/proc/cpuinfo')) {
+        const cpuinfo = fs.readFileSync('/proc/cpuinfo', 'utf8');
+        const match = cpuinfo.match(/Serial\s*:\s*([0-9a-fA-F]+)/);
+        if (match && match[1]) {
+          return `rpi-${match[1]}`;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not read Pi serial number:', e.message);
+    }
+
+    // Fallback to MAC address
+    try {
+      const networkInterfaces = require('os').networkInterfaces();
+      const eth0 = networkInterfaces['eth0'] || networkInterfaces['wlan0'] || Object.values(networkInterfaces).flat().find(i => !i.internal);
+      if (eth0 && eth0.mac) {
+        return `rpi-${eth0.mac.replace(/:/g, '').toLowerCase()}`;
+      }
+    } catch (e) {
+      console.warn('Could not read MAC address:', e.message);
+    }
+
+    // Final fallback (should ideally be avoided)
+    return `rpi-gen-${Math.random().toString(36).substring(2, 10)}`;
+  }
+
+  async announceToCloud() {
+    if (!this.credentials || !this.credentials.email || !this.config.azure || !this.config.azure.bbsUrl) {
+      return;
+    }
+
+    console.log(`📡 Announcing device ${this.deviceId} to cloud for user ${this.credentials.email}...`);
+    try {
+      // We'll use a special endpoint or just the claim endpoint if we had a token.
+      // Since the Pi doesn't have a user token yet (it only has Veo credentials),
+      // we'll update the BBS to allow a "Pi Announcement" using a shared secret or just trust if it matches provisioning.
+      
+      // For now, let's keep it simple: the Pi doesn't NEED to announce if the user "Claims" it.
+      // But to make it "Intuitive", we want the user to see it.
+      // Let's add an endpoint to BBS that accepts a "Provisioning Announcement"
+      
+      const res = await fetch(`${this.config.azure.bbsUrl}/devices/announce`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deviceId: this.deviceId,
+          email: this.credentials.email,
+          friendlyName: `Pi (${this.deviceId.slice(-4)})`
+        })
+      });
+      
+      if (res.ok) {
+        console.log('✅ Device announcement successful');
+      } else {
+        console.warn('⚠️ Device announcement failed (might be already claimed or BBS down)');
+      }
+    } catch (err) {
+      console.error('❌ Failed to announce device to cloud:', err.message);
+    }
+  }
 
   async initialize() {
     console.log('Initializing Espa-TV Player...');

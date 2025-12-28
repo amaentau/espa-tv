@@ -24,6 +24,8 @@ const FROM_NAME = (process.env.FROM_NAME || 'Espa TV Auth').trim();
 const TABLE_NAME_ENTRIES = process.env.TABLE_NAME || 'bbsEntries';
 const TABLE_NAME_USERS = 'bbsUsers'; 
 const TABLE_NAME_CONFIG = 'bbsConfig';
+const TABLE_NAME_DEVICES = 'bbsDevices';
+const TABLE_NAME_PERMISSIONS = 'bbsPermissions';
 const STORAGE_CONNECTION_STRING = process.env.STORAGE_CONNECTION_STRING;
 
 // Setup Nodemailer Transporter
@@ -51,7 +53,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 const mockDb = {
   [TABLE_NAME_ENTRIES]: [],
   [TABLE_NAME_USERS]: [],
-  [TABLE_NAME_CONFIG]: []
+  [TABLE_NAME_CONFIG]: [],
+  [TABLE_NAME_DEVICES]: [],
+  [TABLE_NAME_PERMISSIONS]: []
 };
 
 // Default Config
@@ -120,7 +124,7 @@ function getTableClient(tableName) {
 }
 
 async function ensureTablesExist() {
-  const tables = [TABLE_NAME_ENTRIES, TABLE_NAME_USERS, TABLE_NAME_CONFIG];
+  const tables = [TABLE_NAME_ENTRIES, TABLE_NAME_USERS, TABLE_NAME_CONFIG, TABLE_NAME_DEVICES, TABLE_NAME_PERMISSIONS];
   for (const t of tables) {
     try {
       const client = getTableClient(t);
@@ -253,6 +257,288 @@ app.post('/auth/verify-otp', async (req, res) => {
   }
 });
 
+// --- Device & Discovery Endpoints ---
+
+// 1. List my devices
+app.get('/devices', authenticateToken, async (req, res) => {
+  try {
+    const email = req.user.email;
+    const permClient = getTableClient(TABLE_NAME_PERMISSIONS);
+    const deviceClient = getTableClient(TABLE_NAME_DEVICES);
+
+    const filter = `PartitionKey eq '${email.replace(/'/g, "''")}'`;
+    const permissions = [];
+    for await (const perm of permClient.listEntities({ queryOptions: { filter } })) {
+      permissions.push({
+        deviceId: perm.rowKey,
+        role: perm.role
+      });
+    }
+
+    // Enhance with device metadata (names, etc.)
+    const devices = [];
+    for (const perm of permissions) {
+      try {
+        const device = await deviceClient.getEntity(perm.deviceId, 'metadata');
+        devices.push({
+          id: perm.deviceId,
+          role: perm.role,
+          friendlyName: device.friendlyName || perm.deviceId,
+          masterEmail: device.masterEmail
+        });
+      } catch (err) {
+        // Fallback if metadata is missing (legacy)
+        devices.push({
+          id: perm.deviceId,
+          role: perm.role,
+          friendlyName: perm.deviceId,
+          masterEmail: perm.role === 'master' ? email : 'unknown'
+        });
+      }
+    }
+
+    return res.json(devices);
+  } catch (err) {
+    console.error('GET /devices error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// 2. Claim a device (Master only)
+app.post('/devices/claim', authenticateToken, async (req, res) => {
+  try {
+    const { deviceId, friendlyName } = req.body;
+    if (!deviceId) return res.status(400).json({ error: 'deviceId required' });
+
+    const email = req.user.email;
+    const deviceClient = getTableClient(TABLE_NAME_DEVICES);
+    const permClient = getTableClient(TABLE_NAME_PERMISSIONS);
+
+    // Check if device already has a master
+    let existingDevice;
+    try {
+      existingDevice = await deviceClient.getEntity(deviceId, 'metadata');
+    } catch (err) {
+      if (err.statusCode !== 404) throw err;
+    }
+
+    if (existingDevice && existingDevice.masterEmail && existingDevice.masterEmail !== email) {
+      return res.status(403).json({ error: 'Device already claimed by another user' });
+    }
+
+    // Upsert Device Metadata
+    await deviceClient.upsertEntity({
+      partitionKey: deviceId,
+      rowKey: 'metadata',
+      friendlyName: friendlyName || deviceId,
+      masterEmail: email,
+      createdAt: existingDevice ? existingDevice.createdAt : new Date().toISOString()
+    });
+
+    // Upsert Permission
+    await permClient.upsertEntity({
+      partitionKey: email,
+      rowKey: deviceId,
+      role: 'master',
+      addedBy: 'user-claim'
+    });
+
+    return res.json({ ok: true, deviceId });
+  } catch (err) {
+    console.error('POST /devices/claim error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// 3. List shares for a device (Master only)
+app.get('/devices/:deviceId/shares', authenticateToken, async (req, res) => {
+  try {
+    const { deviceId } = req.params;
+    const email = req.user.email;
+    const deviceClient = getTableClient(TABLE_NAME_DEVICES);
+    const permClient = getTableClient(TABLE_NAME_PERMISSIONS);
+
+    // Verify requester is Master
+    const device = await deviceClient.getEntity(deviceId, 'metadata');
+    if (device.masterEmail !== email) {
+      return res.status(403).json({ error: 'Only the device master can manage shares' });
+    }
+
+    // Get all permissions for this deviceId
+    // Note: Permissions table PartitionKey is email, RowKey is deviceId.
+    // To find all emails for a device, we'd ideally have an index or a secondary table.
+    // For a minimal implementation with Azure Tables without a secondary index, we can scan or filter by RowKey.
+    // Given the scale, filtering by RowKey is acceptable if PartitionKey isn't known.
+    
+    const results = [];
+    const iter = permClient.listEntities({ queryOptions: { filter: `RowKey eq '${deviceId.replace(/'/g, "''")}'` } });
+    for await (const perm of iter) {
+      results.push({
+        email: perm.partitionKey,
+        role: perm.role,
+        addedBy: perm.addedBy
+      });
+    }
+
+    return res.json(results);
+  } catch (err) {
+    console.error('GET /shares error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// 4. Share device with another user
+app.post('/devices/:deviceId/share', authenticateToken, async (req, res) => {
+  try {
+    const { deviceId } = req.params;
+    const { email: targetEmail } = req.body;
+    const email = req.user.email;
+
+    if (!targetEmail || !targetEmail.includes('@')) {
+      return res.status(400).json({ error: 'Valid email required' });
+    }
+
+    const deviceClient = getTableClient(TABLE_NAME_DEVICES);
+    const permClient = getTableClient(TABLE_NAME_PERMISSIONS);
+
+    // Verify requester is Master
+    const device = await deviceClient.getEntity(deviceId, 'metadata');
+    if (device.masterEmail !== email) {
+      return res.status(403).json({ error: 'Only the device master can share' });
+    }
+
+    // Create permission for target email
+    await permClient.upsertEntity({
+      partitionKey: targetEmail.toLowerCase().trim(),
+      rowKey: deviceId,
+      role: 'contributor',
+      addedBy: email
+    });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('POST /share error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// 5. Remove share
+app.delete('/devices/:deviceId/share/:targetEmail', authenticateToken, async (req, res) => {
+  try {
+    const { deviceId, targetEmail } = req.params;
+    const email = req.user.email;
+
+    const deviceClient = getTableClient(TABLE_NAME_DEVICES);
+    const permClient = getTableClient(TABLE_NAME_PERMISSIONS);
+
+    // Verify requester is Master
+    const device = await deviceClient.getEntity(deviceId, 'metadata');
+    if (device.masterEmail !== email) {
+      return res.status(403).json({ error: 'Only the device master can manage shares' });
+    }
+
+    if (targetEmail === device.masterEmail) {
+      return res.status(400).json({ error: 'Cannot remove the master user' });
+    }
+
+    await permClient.deleteEntity(targetEmail, deviceId);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /share error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// 6. Device Announcement (Public for Pi provisioning)
+app.post('/devices/announce', async (req, res) => {
+  try {
+    const { deviceId, email, friendlyName } = req.body;
+    if (!deviceId || !email) return res.status(400).json({ error: 'Missing fields' });
+
+    const deviceClient = getTableClient(TABLE_NAME_DEVICES);
+    const permClient = getTableClient(TABLE_NAME_PERMISSIONS);
+
+    // Check if device already has a master
+    let existingDevice;
+    try {
+      existingDevice = await deviceClient.getEntity(deviceId, 'metadata');
+    } catch (err) {
+      if (err.statusCode !== 404) throw err;
+    }
+
+    if (existingDevice && existingDevice.masterEmail) {
+      // Already has a master, ignore announcement (don't overwrite)
+      return res.json({ ok: true, status: 'already_claimed' });
+    }
+
+    // Register Device
+    await deviceClient.upsertEntity({
+      partitionKey: deviceId,
+      rowKey: 'metadata',
+      friendlyName: friendlyName || deviceId,
+      masterEmail: email,
+      createdAt: new Date().toISOString()
+    });
+
+    // Auto-grant Master permission to the provisioning email
+    await permClient.upsertEntity({
+      partitionKey: email,
+      rowKey: deviceId,
+      role: 'master',
+      addedBy: 'pi-announcement'
+    });
+
+    return res.json({ ok: true, status: 'registered' });
+  } catch (err) {
+    console.error('POST /devices/announce error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// --- Permission Helpers ---
+async function checkAndAutoProvision(email, deviceId) {
+  const permClient = getTableClient(TABLE_NAME_PERMISSIONS);
+  const deviceClient = getTableClient(TABLE_NAME_DEVICES);
+
+  try {
+    // Check if permission already exists
+    await permClient.getEntity(email, deviceId);
+    return true; 
+  } catch (err) {
+    if (err.statusCode !== 404) throw err;
+
+    // Legacy/Auto-provision: If deviceId is the user's email, or if it's a new device and they are the first to use it
+    if (deviceId === email) {
+      console.log(`Auto-provisioning legacy permission for ${email} on device ${deviceId}`);
+      
+      // 1. Ensure Device exists
+      try {
+        await deviceClient.getEntity(deviceId, 'metadata');
+      } catch (devErr) {
+        if (devErr.statusCode === 404) {
+          await deviceClient.createEntity({
+            partitionKey: deviceId,
+            rowKey: 'metadata',
+            friendlyName: `Legacy Device (${email})`,
+            masterEmail: email,
+            createdAt: new Date().toISOString()
+          });
+        }
+      }
+
+      // 2. Create Permission
+      await permClient.upsertEntity({
+        partitionKey: email,
+        rowKey: deviceId,
+        role: 'master',
+        addedBy: 'system-legacy'
+      });
+      return true;
+    }
+    return false;
+  }
+}
+
 // 4. Set PIN
 app.post('/auth/set-pin', async (req, res) => {
   const { pin, setupToken } = req.body;
@@ -384,6 +670,12 @@ app.post('/entry', authenticateToken, async (req, res) => {
     const { key, value1, value2 } = req.body || {};
     if (!key || !value1) return res.status(400).json({ error: 'key and value1 required' });
 
+    // Step 1: Permission Check (Legacy compatibility included)
+    const hasAccess = await checkAndAutoProvision(req.user.email, key);
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'No permission for this device' });
+    }
+
     const title = (typeof value2 === 'string') ? value2.trim() : '';
     const timestamp = new Date().toISOString(); 
     const rowKey = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`; 
@@ -409,6 +701,12 @@ app.get('/entries/:key', authenticateToken, async (req, res) => {
   try {
     const key = req.params.key;
     if (!key) return res.status(400).json({ error: 'key is required' });
+
+    // Step 1: Permission Check (Legacy compatibility included)
+    const hasAccess = await checkAndAutoProvision(req.user.email, key);
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'No permission for this device' });
+    }
 
     const client = getTableClient(TABLE_NAME_ENTRIES);
     const filter = `PartitionKey eq '${key.replace(/'/g, "''")}'`;

@@ -104,13 +104,20 @@ class ProvisioningManager {
         return {};
       };
 
-      const configPath = path.join(__dirname, '..', 'config.json');
-      const credPath = path.join(__dirname, '..', 'credentials.json');
-      
-      const config = loadJson(configPath);
-      const creds = loadJson(credPath);
-      
-      let configuredWifi = [];
+    const configPath = path.join(__dirname, '..', 'config.json');
+    const credPath = path.join(__dirname, '..', 'credentials.json');
+    
+    // Try to load existing config to get persistent deviceId if it exists
+    let existingConfig = {};
+    try {
+      if (fs.existsSync(configPath)) existingConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    } catch (e) {}
+
+    const config = loadJson(configPath);
+    const creds = loadJson(credPath);
+    
+    // Use the same ID generation logic as index.js
+    const deviceId = existingConfig.deviceId || data.deviceId || '';
       try {
         // List existing wifi connection profiles
         // -t : terse
@@ -127,7 +134,7 @@ class ProvisioningManager {
       res.json({
         email: creds.email || '',
         password: creds.password || '',
-        deviceId: config.deviceId || '',
+        deviceId: deviceId,
         wifiNetworks: configuredWifi
       });
     });
@@ -262,7 +269,10 @@ class ProvisioningManager {
 
     // Update simple fields (preserving existing if not provided)
     if (data.deviceId) config.deviceId = data.deviceId;
-    if (!config.deviceId) config.deviceId = `raspberry-pi-${Date.now()}`;
+    
+    // If still no deviceId, we'll let index.js generate one on next boot, 
+    // but ideally we want to save it now if we can.
+    // However, the cleanest is to let the persistent logic in index.js handle it.
 
     // Ensure nested objects exist
     config.azure = config.azure || {};
