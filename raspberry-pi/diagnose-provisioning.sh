@@ -51,7 +51,7 @@ echo "7. Checking logs (last 50 lines)..."
 if [ -f /var/log/syslog ]; then
     grep "Veo" /var/log/syslog | tail -n 20
 else
-    journalctl -u veo-dongle.service -n 20 --no-pager
+    journalctl -u espa-tv.service -n 20 --no-pager
 fi
 echo ""
 

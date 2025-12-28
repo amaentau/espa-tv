@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_ROOT="${SCRIPT_DIR}"
-SERVICE_USER="dongle"
+SERVICE_USER="espatv"
 SERVICE_HOME="/home/${SERVICE_USER}"
 CONFIG_JSON="${APP_ROOT}/config.json"
 DEFAULT_DISPLAY_MODES=("3840x2160" "1920x1080" "1280x720")
@@ -173,8 +173,8 @@ fi
 
 # Allow nmcli without password for the service user (for provisioning)
 # Also allow iptables for captive portal redirection
-echo "${SERVICE_USER} ALL=(ALL) NOPASSWD: /usr/bin/nmcli, /usr/bin/systemctl, /usr/sbin/iptables" > "/etc/sudoers.d/010_veo-dongle"
-chmod 0440 "/etc/sudoers.d/010_veo-dongle"
+echo "${SERVICE_USER} ALL=(ALL) NOPASSWD: /usr/bin/nmcli, /usr/bin/systemctl, /usr/sbin/iptables" > "/etc/sudoers.d/010_espa-tv"
+chmod 0440 "/etc/sudoers.d/010_espa-tv"
 
 
 # Install jq separately as it may not be in default repos
@@ -400,11 +400,11 @@ chmod +x "${SERVICE_HOME}/.xinitrc"
 success "Setup complete! You can launch the kiosk manually via ${APP_ROOT}/scripts/start-kiosk.sh."
 
 info "Installing early-boot reboot monitor service"
-MONITOR_SERVICE_FILE="/etc/systemd/system/veo-reboot-monitor.service"
+MONITOR_SERVICE_FILE="/etc/systemd/system/espa-tv-reboot-monitor.service"
 
 cat >"${MONITOR_SERVICE_FILE}" <<EOF
 [Unit]
-Description=Veo Reboot Monitor (Early Boot)
+Description=ESPA TV Reboot Monitor (Early Boot)
 DefaultDependencies=no
 Before=network-pre.target
 Wants=network-pre.target
@@ -422,20 +422,20 @@ StandardError=journal
 WantedBy=sysinit.target
 EOF
 
-systemctl enable veo-reboot-monitor.service
+systemctl enable espa-tv-reboot-monitor.service
 success "Early-boot monitor service installed."
 
-info "Installing systemd service for Veo Kiosk"
-SERVICE_FILE="/etc/systemd/system/veo-dongle.service"
+info "Installing systemd service for ESPA TV"
+SERVICE_FILE="/etc/systemd/system/espa-tv.service"
 
 # Remove old service if it exists
-if systemctl is-active --quiet veo-dongle; then
-  systemctl stop veo-dongle
+if systemctl is-active --quiet espa-tv; then
+  systemctl stop espa-tv
 fi
 
 cat >"${SERVICE_FILE}" <<EOF
 [Unit]
-Description=Veo Dongle Kiosk (Xorg)
+Description=ESPA TV Kiosk (Xorg)
 After=network.target
 Wants=network.target
 
@@ -445,7 +445,7 @@ Group=${SERVICE_USER}
 Environment="DISPLAY=:0"
 # Start Xorg directly; .xinitrc will handle the rest (window manager + app)
 ExecStart=/usr/bin/startx
-WorkingDirectory=${SERVICE_HOME}
+WorkingDirectory=${APP_ROOT}
 Restart=always
 RestartSec=5
 # Ensure logs are captured
@@ -459,11 +459,11 @@ EOF
 # Reload systemd
 systemctl daemon-reload
 # Enable the service so it starts on boot
-systemctl enable veo-dongle.service
+systemctl enable espa-tv.service
 
 success "Systemd service installed and enabled."
-info "To start the service now: sudo systemctl start veo-dongle"
-info "To stop the service: sudo systemctl stop veo-dongle"
-info "To view logs: journalctl -u veo-dongle -f"
+info "To start the service now: sudo systemctl start espa-tv"
+info "To stop the service: sudo systemctl stop espa-tv"
+info "To view logs: journalctl -u espa-tv -f"
 
 

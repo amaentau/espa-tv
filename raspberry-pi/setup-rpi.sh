@@ -237,11 +237,11 @@ fi
 
 # Create systemd service file for auto-start
 print_status "Creating systemd service..."
-SERVICE_FILE="/etc/systemd/system/veo-dongle.service"
+SERVICE_FILE="/etc/systemd/system/espa-tv.service"
 
 cat > $SERVICE_FILE << EOL
 [Unit]
-Description=Veo Dongle Raspberry Pi
+Description=ESPA TV Raspberry Pi
 After=network.target
 Wants=network.target
 
@@ -268,14 +268,14 @@ print_success "Systemd service created"
 # Enable and start the service
 print_status "Enabling and starting the service..."
 $SUDO systemctl daemon-reload
-$SUDO systemctl enable veo-dongle.service
-$SUDO systemctl start veo-dongle.service
+$SUDO systemctl enable espa-tv.service
+$SUDO systemctl start espa-tv.service
 
 print_success "Service enabled and started"
 
 # Check service status
 print_status "Checking service status..."
-$SUDO systemctl status veo-dongle.service --no-pager
+$SUDO systemctl status espa-tv.service --no-pager
 
 # Create a test script for validation
 print_status "Creating validation test script..."
@@ -360,15 +360,15 @@ echo ""
 print_status "Next steps:"
 echo "1. Edit .env file with your actual configuration"
 echo "2. Edit credentials.json with your Veo login credentials"
-echo "3. Run 'sudo systemctl restart veo-dongle.service' to apply changes"
-echo "4. Check logs with 'sudo journalctl -f -u veo-dongle.service'"
+echo "3. Run 'sudo systemctl restart espa-tv.service' to apply changes"
+echo "4. Check logs with 'sudo journalctl -f -u espa-tv.service'"
 echo ""
 print_status "Useful commands:"
-echo "- Start service: sudo systemctl start veo-dongle.service"
-echo "- Stop service: sudo systemctl stop veo-dongle.service"
-echo "- Restart service: sudo systemctl restart veo-dongle.service"
-echo "- Check status: sudo systemctl status veo-dongle.service"
-echo "- View logs: sudo journalctl -f -u veo-dongle.service"
+echo "- Start service: sudo systemctl start espa-tv.service"
+echo "- Stop service: sudo systemctl stop espa-tv.service"
+echo "- Restart service: sudo systemctl restart espa-tv.service"
+echo "- Check status: sudo systemctl status espa-tv.service"
+echo "- View logs: sudo journalctl -f -u espa-tv.service"
 echo "- Backup config: ./backup-config.sh"
 echo ""
 print_warning "Make sure to:"

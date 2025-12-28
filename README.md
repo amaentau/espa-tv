@@ -645,7 +645,7 @@ npm run test:mobile
 1. Set up auto-start on boot:
    ```bash
    # Create systemd service
-   sudo nano /etc/systemd/system/veo-dongle.service
+   sudo nano /etc/systemd/system/espa-tv.service
    ```
 
    ```ini

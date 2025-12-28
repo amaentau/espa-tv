@@ -84,7 +84,7 @@ npm run dev
 npm start
 
 # Or using systemd service (recommended)
-sudo systemctl start veo-dongle.service
+sudo systemctl start espa-tv.service
 ```
 
 ## Configuration
@@ -306,14 +306,14 @@ npm run dev
 
 2. **Enable Service:**
 ```bash
-sudo systemctl enable veo-dongle.service
-sudo systemctl start veo-dongle.service
+sudo systemctl enable espa-tv.service
+sudo systemctl start espa-tv.service
 ```
 
 3. **Monitor Service:**
 ```bash
-sudo systemctl status veo-dongle.service
-sudo journalctl -f -u veo-dongle.service
+sudo systemctl status espa-tv.service
+sudo journalctl -f -u espa-tv.service
 ```
 
 ## Troubleshooting
@@ -348,7 +348,7 @@ xset q
 sudo chown -R veodongle:veodongle /opt/veo-dongle
 
 # Check service logs
-sudo journalctl -f -u veo-dongle.service
+sudo journalctl -f -u espa-tv.service
 ```
 
 #### Authentication Problems
@@ -373,7 +373,7 @@ If the browser fails to launch, the application enters recovery mode:
 3. **View Logs:**
    ```bash
    # On Raspberry Pi
-   sudo journalctl -f -u veo-dongle.service
+   sudo journalctl -f -u espa-tv.service
 
    # In development
    npm run dev 2>&1 | tee veo-dongle.log
