@@ -10,12 +10,17 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // --- Configuration ---
+// For local development, this reads from a .env file if present
+require('dotenv').config();
+
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-prod-123';
-const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY; // SMTP Password
-const SMTP_HOST = process.env.SMTP_HOST || 'smtp-relay.brevo.com';
-const SMTP_PORT = process.env.SMTP_PORT || 587;
-const SMTP_USER = process.env.SMTP_USER; // Brevo Login Email
-const SENDGRID_FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL || 'noreply@espa-tv.com';
+const BREVO_SMTP_KEY = process.env.BREVO_SMTP_KEY; 
+const BREVO_SMTP_USER = process.env.BREVO_SMTP_USER;
+const BREVO_SMTP_HOST = process.env.BREVO_SMTP_HOST || 'smtp-relay.brevo.com';
+const BREVO_SMTP_PORT = parseInt(process.env.BREVO_SMTP_PORT) || 587;
+const FROM_EMAIL = (process.env.FROM_EMAIL || 'noreply@espa-tv.com').trim();
+const FROM_NAME = (process.env.FROM_NAME || 'Espa TV Auth').trim();
+
 const TABLE_NAME_ENTRIES = process.env.TABLE_NAME || 'bbsEntries';
 const TABLE_NAME_USERS = 'bbsUsers'; 
 const TABLE_NAME_CONFIG = 'bbsConfig';
@@ -23,18 +28,18 @@ const STORAGE_CONNECTION_STRING = process.env.STORAGE_CONNECTION_STRING;
 
 // Setup Nodemailer Transporter
 let mailTransporter = null;
-if (SENDGRID_API_KEY && SMTP_USER) {
+if (BREVO_SMTP_KEY && BREVO_SMTP_USER) {
   mailTransporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: SMTP_PORT,
-    secure: false, // true for 465, false for other ports
+    host: BREVO_SMTP_HOST,
+    port: BREVO_SMTP_PORT,
+    secure: false, // true for 465, false for other ports (STARTTLS)
     auth: {
-      user: SMTP_USER,
-      pass: SENDGRID_API_KEY,
+      user: BREVO_SMTP_USER,
+      pass: BREVO_SMTP_KEY,
     },
   });
 } else {
-  console.warn('⚠️ SMTP Credentials (SMTP_USER/SENDGRID_API_KEY) not found. Email sending will be mocked.');
+  console.warn('⚠️ Brevo Credentials (BREVO_SMTP_USER/BREVO_SMTP_KEY) not found. Email sending will be mocked.');
 }
 
 // Basic Middleware
@@ -152,7 +157,7 @@ async function sendEmail(to, subject, text) {
   
   try {
     await mailTransporter.sendMail({
-      from: `"${process.env.SMTP_FROM_NAME || 'Espa TV Auth'}" <${SENDGRID_FROM_EMAIL}>`, // Use configured sender
+      from: `"${FROM_NAME}" <${FROM_EMAIL}>`, // Use configured sender
       to,
       subject,
       text,
@@ -276,7 +281,7 @@ app.post('/auth/set-pin', async (req, res) => {
       lockedUntil: 0
     });
 
-    const token = jwt.sign({ email, isAdmin: makeAdmin }, JWT_SECRET, { expiresIn: '30d' });
+    const token = jwt.sign({ email, isAdmin: makeAdmin }, JWT_SECRET, { expiresIn: '180d' });
     return res.json({ ok: true, token, email, isAdmin: makeAdmin });
 
   } catch (err) {
@@ -321,7 +326,7 @@ app.post('/auth/login', async (req, res) => {
       await client.updateEntity({ partitionKey: email, rowKey: 'profile', failedAttempts: 0, lockedUntil: 0 }, "Merge");
     }
 
-    const token = jwt.sign({ email, isAdmin: !!user.isAdmin }, JWT_SECRET, { expiresIn: '30d' });
+    const token = jwt.sign({ email, isAdmin: !!user.isAdmin }, JWT_SECRET, { expiresIn: '180d' });
     return res.json({ ok: true, token, email, isAdmin: !!user.isAdmin });
 
   } catch (err) {

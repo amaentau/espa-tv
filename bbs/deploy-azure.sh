@@ -54,6 +54,12 @@ az appservice plan create \
   --is-linux 1>/dev/null
 
 echo "Creating Web App: $APP_NAME (Node 22)"
+# If app already exists, disable AlwaysOn to ensure compatibility with Free (F1) tier
+if az webapp show --name "$APP_NAME" --resource-group "$RG" >/dev/null 2>&1; then
+  echo "Disabling AlwaysOn for existing app to allow Free Tier update..."
+  az webapp config set --name "$APP_NAME" --resource-group "$RG" --always-on false 1>/dev/null 2>&1 || true
+fi
+
 az webapp create \
   --name "$APP_NAME" \
   --resource-group "$RG" \
@@ -61,31 +67,47 @@ az webapp create \
   --runtime "NODE|22-lts" 1>/dev/null
 
 echo "Configuring app settings"
+# Base settings
 az webapp config appsettings set \
   --name "$APP_NAME" \
   --resource-group "$RG" \
   --settings \
     STORAGE_CONNECTION_STRING="$CONN_STR" \
-    TABLE_NAME="bbsEntries" 1>/dev/null
+    TABLE_NAME="bbsEntries" \
+    SCM_DO_BUILD_DURING_DEPLOYMENT=true 1>/dev/null
 
-echo "Configuring build during deployment"
-az webapp config appsettings set \
-  --name "$APP_NAME" \
-  --resource-group "$RG" \
-  --settings SCM_DO_BUILD_DURING_DEPLOYMENT=true 1>/dev/null
+# Sync settings from config.env if it exists
+SCRIPT_DIR="$(dirname "$0")"
+if [ -f "$SCRIPT_DIR/config.env" ]; then
+  echo "Syncing Brevo & JWT settings from config.env..."
+  
+  # Read settings into an array, ignoring comments and empty lines
+  # We also strip carriage returns (\r) for Windows compatibility
+  mapfile -t SETTINGS_ARR < <(grep -v '^#' "$SCRIPT_DIR/config.env" | grep -v '^$' | sed 's/\r//')
+  
+  if [ ${#SETTINGS_ARR[@]} -gt 0 ]; then
+    az webapp config appsettings set \
+      --name "$APP_NAME" \
+      --resource-group "$RG" \
+      --settings "${SETTINGS_ARR[@]}" 1>/dev/null
+  fi
+else
+  echo "⚠️ config.env not found in $SCRIPT_DIR. Skipping additional app settings."
+fi
 
 echo "Deploying app (zip)"
 pushd "$(dirname "$0")" >/dev/null
-TMP_ZIP="bbs.zip"
+TMP_ZIP="bbs_deploy.zip"
 rm -f "$TMP_ZIP"
-# Exclude common dev artifacts; Oryx will run npm install on Azure
-zip -qr "$TMP_ZIP" . -x "node_modules/*" ".git/*" "*.zip"
+# Exclude dev artifacts, node_modules, and the zip itself
+zip -qr "$TMP_ZIP" . -x "node_modules/*" ".git/*" "*.zip" "*.env" "*.env.template"
 popd >/dev/null
 
-az webapp deployment source config-zip \
+az webapp deploy \
   --resource-group "$RG" \
   --name "$APP_NAME" \
-  --src "$(dirname "$0")/bbs.zip" 1>/dev/null
+  --src-path "$(dirname "$0")/bbs_deploy.zip" \
+  --type zip 1>/dev/null
 
 URL="https://$APP_NAME.azurewebsites.net"
 echo "Deployment complete. App URL: $URL"
