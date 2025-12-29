@@ -193,10 +193,10 @@
             <button type="button" id="addWifiBtn" class="add-wifi-btn">+ Add Network</button>
             <datalist id="wifi-scan-results"></datalist>
 
-            <div class="section-title">Device Settings (Optional)</div>
+            <div class="section-title">Device Settings</div>
             <div class="form-group">
-                <label for="deviceId">Device ID</label>
-                <input type="text" id="deviceId" name="deviceId" placeholder="raspberry-pi-...">
+                <label for="friendlyName">Friendly Name (e.g. Living Room)</label>
+                <input type="text" id="friendlyName" name="friendlyName" required placeholder="Living Room">
             </div>
 
             <button type="submit" id="submitBtn" style="margin-top: 20px;">Save & Restart</button>
@@ -332,7 +332,7 @@
                     
                     if (data.email) document.getElementById('email').value = data.email;
                     if (data.password) document.getElementById('password').value = data.password;
-                    if (data.deviceId) document.getElementById('deviceId').value = data.deviceId;
+                    if (data.friendlyName) document.getElementById('friendlyName').value = data.friendlyName;
 
                     if (data.wifiNetworks && data.wifiNetworks.length > 0) {
                         configuredSsids = data.wifiNetworks;

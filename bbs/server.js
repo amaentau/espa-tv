@@ -449,11 +449,74 @@ app.delete('/devices/:deviceId/share/:targetEmail', authenticateToken, async (re
   }
 });
 
-// 6. Device Announcement (Public for Pi provisioning)
+// 6. Release/Delete Device (Master only)
+app.delete('/devices/:deviceId', authenticateToken, async (req, res) => {
+  try {
+    const { deviceId } = req.params;
+    const email = req.user.email;
+
+    const deviceClient = getTableClient(TABLE_NAME_DEVICES);
+    const permClient = getTableClient(TABLE_NAME_PERMISSIONS);
+
+    // 1. Verify requester is Master
+    const device = await deviceClient.getEntity(deviceId, 'metadata');
+    if (device.masterEmail !== email) {
+      return res.status(403).json({ error: 'Only the device master can release the device' });
+    }
+
+    // 2. Delete all permissions for this device
+    // Since PartitionKey is email and RowKey is deviceId, we scan/filter by RowKey
+    const iter = permClient.listEntities({ queryOptions: { filter: `RowKey eq '${deviceId.replace(/'/g, "''")}'` } });
+    for await (const perm of iter) {
+      await permClient.deleteEntity(perm.partitionKey, perm.rowKey);
+    }
+
+    // 3. Delete device metadata
+    await deviceClient.deleteEntity(deviceId, 'metadata');
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /devices error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// 7. Update Device Name (Master only)
+app.patch('/devices/:deviceId', authenticateToken, async (req, res) => {
+  try {
+    const { deviceId } = req.params;
+    const { friendlyName } = req.body;
+    const email = req.user.email;
+
+    if (!friendlyName) return res.status(400).json({ error: 'friendlyName required' });
+
+    const deviceClient = getTableClient(TABLE_NAME_DEVICES);
+
+    // Verify requester is Master
+    const device = await deviceClient.getEntity(deviceId, 'metadata');
+    if (device.masterEmail !== email) {
+      return res.status(403).json({ error: 'Only the device master can rename the device' });
+    }
+
+    // Update Name
+    await deviceClient.updateEntity({
+      partitionKey: deviceId,
+      rowKey: 'metadata',
+      friendlyName: friendlyName.trim()
+    }, "Merge");
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('PATCH /devices error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// 8. Device Announcement (Public for Pi provisioning)
 app.post('/devices/announce', async (req, res) => {
   try {
     const { deviceId, email, friendlyName } = req.body;
-    if (!deviceId || !email) return res.status(400).json({ error: 'Missing fields' });
+    if (!deviceId || !email || !friendlyName) return res.status(400).json({ error: 'Missing fields' });
 
     const deviceClient = getTableClient(TABLE_NAME_DEVICES);
     const permClient = getTableClient(TABLE_NAME_PERMISSIONS);

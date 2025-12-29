@@ -104,24 +104,26 @@ class ProvisioningManager {
         return {};
       };
 
-    const configPath = path.join(__dirname, '..', 'config.json');
-    const credPath = path.join(__dirname, '..', 'credentials.json');
-    
-    // Try to load existing config to get persistent deviceId if it exists
-    let existingConfig = {};
-    try {
-      if (fs.existsSync(configPath)) existingConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    } catch (e) {}
+      const configPath = path.join(__dirname, '..', 'config.json');
+      const credPath = path.join(__dirname, '..', 'credentials.json');
+      const idPath = path.join(__dirname, '..', '.device-id');
+      
+      const config = loadJson(configPath);
+      const creds = loadJson(credPath);
 
-    const config = loadJson(configPath);
-    const creds = loadJson(credPath);
-    
-    // Use the same ID generation logic as index.js
-    const deviceId = existingConfig.deviceId || data.deviceId || '';
+      // 1. Try to read existing burned-in ID from isolated file
+      let deviceId = '';
+      if (fs.existsSync(idPath)) {
+        try {
+          const content = fs.readFileSync(idPath, 'utf8');
+          const match = content.match(/ID:\s*([a-zA-Z0-9-]+)/);
+          if (match && match[1]) deviceId = match[1];
+        } catch (e) {}
+      }
+      
+      let configuredWifi = [];
       try {
         // List existing wifi connection profiles
-        // -t : terse
-        // -f : fields (NAME, TYPE)
         const { stdout } = require('child_process').execSync('nmcli -t -f NAME,TYPE connection show');
         configuredWifi = stdout.split('\n')
           .filter(line => line.includes(':802-11-wireless'))
@@ -135,6 +137,7 @@ class ProvisioningManager {
         email: creds.email || '',
         password: creds.password || '',
         deviceId: deviceId,
+        friendlyName: config.friendlyName || '',
         wifiNetworks: configuredWifi
       });
     });
@@ -267,17 +270,15 @@ class ProvisioningManager {
       console.warn('⚠️ Could not load existing config:', e.message);
     }
 
-    // Update simple fields (preserving existing if not provided)
-    if (data.deviceId) config.deviceId = data.deviceId;
-    
-    // If still no deviceId, we'll let index.js generate one on next boot, 
-    // but ideally we want to save it now if we can.
-    // However, the cleanest is to let the persistent logic in index.js handle it.
+    // If still no deviceId, we'll let index.js generate one on next boot.
+    // We NO LONGER save deviceId into config.json to keep it clean.
 
     // Ensure nested objects exist
     config.azure = config.azure || {};
     if (data.bbsUrl) config.azure.bbsUrl = data.bbsUrl;
     if (!config.azure.bbsUrl) config.azure.bbsUrl = "https://espa-tv-app.azurewebsites.net";
+
+    if (data.friendlyName) config.friendlyName = data.friendlyName;
 
     config.display = config.display || {};
     if (!config.display.preferredMode) config.display.preferredMode = "auto";

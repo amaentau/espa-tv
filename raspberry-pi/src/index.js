@@ -29,8 +29,8 @@ class EspaTvPlayer {
     // Load credentials
     this.credentials = this.loadCredentials();
 
-    // Check if provisioning is needed (missing config OR missing credentials OR forced by reboot loop)
-    this.needsProvisioning = !this.config || !this.credentials || process.env.FORCE_PROVISIONING === 'true';
+    // Check if provisioning is needed (missing core config OR missing credentials OR forced)
+    this.needsProvisioning = !this.config?.azure?.bbsUrl || !this.credentials || process.env.FORCE_PROVISIONING === 'true';
 
     if (this.needsProvisioning) {
       if (process.env.FORCE_PROVISIONING === 'true') {
@@ -65,7 +65,7 @@ class EspaTvPlayer {
     this.debug = process.env.DEBUG === 'true';
 
     // Initialize cloud service
-    this.cloudService = new CloudService(this.config);
+    this.cloudService = new CloudService(this.config, this.deviceId);
     this.cloudCoordinates = null;
   }
 
@@ -113,35 +113,61 @@ class EspaTvPlayer {
 
 
   getPersistentDeviceId() {
-    if (this.config.deviceId) return this.config.deviceId;
-    if (process.env.DEVICE_ID) return process.env.DEVICE_ID;
+    const idPath = path.join(__dirname, '..', '.device-id');
+    
+    // 1. Try to read existing burned-in ID
+    if (fs.existsSync(idPath)) {
+      try {
+        const content = fs.readFileSync(idPath, 'utf8');
+        const match = content.match(/ID:\s*([a-zA-Z0-9-]+)/);
+        if (match && match[1]) return match[1];
+      } catch (e) {
+        console.warn('Could not read .device-id file, attempting to regenerate');
+      }
+    }
 
+    // 2. Generate new ID (Hardware Serial > Machine ID > Random)
+    let id = null;
     try {
-      // Try to get Raspberry Pi Serial Number
       if (fs.existsSync('/proc/cpuinfo')) {
         const cpuinfo = fs.readFileSync('/proc/cpuinfo', 'utf8');
         const match = cpuinfo.match(/Serial\s*:\s*([0-9a-fA-F]+)/);
-        if (match && match[1]) {
-          return `rpi-${match[1]}`;
+        if (match && match[1] && match[1].replace(/0/g, '').length > 0) {
+          id = `rpi-${match[1]}`;
         }
       }
-    } catch (e) {
-      console.warn('Could not read Pi serial number:', e.message);
-    }
-
-    // Fallback to MAC address
-    try {
-      const networkInterfaces = require('os').networkInterfaces();
-      const eth0 = networkInterfaces['eth0'] || networkInterfaces['wlan0'] || Object.values(networkInterfaces).flat().find(i => !i.internal);
-      if (eth0 && eth0.mac) {
-        return `rpi-${eth0.mac.replace(/:/g, '').toLowerCase()}`;
+      if (!id && fs.existsSync('/etc/machine-id')) {
+        id = `rpi-${fs.readFileSync('/etc/machine-id', 'utf8').trim().substring(0, 16)}`;
       }
     } catch (e) {
-      console.warn('Could not read MAC address:', e.message);
+      console.warn('Hardware detection failed:', e.message);
     }
 
-    // Final fallback (should ideally be avoided)
-    return `rpi-gen-${Math.random().toString(36).substring(2, 10)}`;
+    if (!id) id = `rpi-gen-${Math.random().toString(36).substring(2, 10)}`;
+
+    // 3. BURN-IN: Save to protected file
+    this.saveDeviceIdToIsolatedFile(id, idPath);
+    return id;
+  }
+
+  saveDeviceIdToIsolatedFile(id, idPath) {
+    try {
+      const warning = 
+`# ESPA TV DEVICE IDENTITY - DO NOT EDIT OR DELETE
+# This file links this physical hardware to your cloud account.
+# Deleting this will cause the device to be seen as a new unit.
+ID: ${id}
+`;
+      // Write file (ensure it's writable first if it exists for some reason)
+      if (fs.existsSync(idPath)) fs.chmodSync(idPath, 0o666);
+      fs.writeFileSync(idPath, warning, 'utf8');
+      
+      // Set to READ-ONLY (444)
+      fs.chmodSync(idPath, 0o444);
+      console.log(`🔥 Identity burned-in to isolated file: ${id}`);
+    } catch (e) {
+      console.error('Failed to burn-in isolated identity:', e.message);
+    }
   }
 
   async announceToCloud() {
@@ -165,7 +191,7 @@ class EspaTvPlayer {
         body: JSON.stringify({
           deviceId: this.deviceId,
           email: this.credentials.email,
-          friendlyName: `Pi (${this.deviceId.slice(-4)})`
+          friendlyName: this.config.friendlyName || `Pi (${this.deviceId.slice(-4)})`
         })
       });
       
@@ -199,7 +225,7 @@ class EspaTvPlayer {
         // Initialize cloud service and fetch stream URL + coordinates
         await this.cloudService.initialize();
         
-        const bbsKey = process.env.BBS_KEY || 'koti';
+        const bbsKey = process.env.BBS_KEY || this.deviceId;
         console.log(`🔍 Fetching stream URL and coordinates from BBS (key: ${bbsKey})...`);
         
         const [bbsUrl, coords] = await Promise.all([

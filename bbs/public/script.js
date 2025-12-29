@@ -24,7 +24,8 @@
     stepLogin: $('stepLogin'),
     adminModal: $('adminModal'),
     claimModal: $('claimModal'),
-    shareModal: $('shareModal')
+    shareModal: $('shareModal'),
+    renameModal: $('renameModal')
   };
 
   const inputs = {
@@ -33,12 +34,14 @@
     authSetPin: $('authSetPin'),
     authLoginPin: $('authLoginPin'),
     deviceSelect: $('deviceSelect'),
+    deviceCheckboxList: $('deviceCheckboxList'),
     videoUrl: $('videoUrl'),
     videoTitle: $('videoTitle'),
     sendBtn: $('sendBtn'),
     claimDeviceId: $('claimDeviceId'),
     claimFriendlyName: $('claimFriendlyName'),
-    shareEmail: $('shareEmailInput')
+    shareEmail: $('shareEmailInput'),
+    renameFriendlyName: $('renameFriendlyName')
   };
 
   const displays = {
@@ -270,33 +273,60 @@
 
   function renderDeviceSelect() {
     const select = inputs.deviceSelect;
+    const checkboxList = inputs.deviceCheckboxList;
+    
     select.innerHTML = '';
+    checkboxList.innerHTML = '';
     
     if (authState.devices.length === 0) {
       const opt = document.createElement('option');
       opt.value = '';
       opt.textContent = 'Ei laitteita - lisää uusi';
       select.appendChild(opt);
+      
+      checkboxList.innerHTML = '<div style="font-size:12px; color:var(--text-sub);">Ei laitteita.</div>';
       return;
     }
 
     authState.devices.forEach(dev => {
+      // 1. Add to Dropdown
       const opt = document.createElement('option');
       opt.value = dev.id;
       opt.textContent = dev.friendlyName || dev.id;
       select.appendChild(opt);
+
+      // 2. Add to Checkbox List
+      const label = document.createElement('label');
+      label.style.cssText = 'display:flex; align-items:center; gap:8px; font-weight:normal; font-size:14px; cursor:pointer;';
+      label.innerHTML = `
+        <input type="checkbox" class="device-target-checkbox" value="${dev.id}" data-name="${dev.friendlyName || dev.id}">
+        <span>${escapeHtml(dev.friendlyName || dev.id)}</span>
+      `;
+      checkboxList.appendChild(label);
     });
 
-    updateShareButtonVisibility();
+    // Default: Check the currently selected device in the list
+    syncCheckboxesWithDropdown();
+
+    updateDeviceButtonsVisibility();
   }
 
-  function updateShareButtonVisibility() {
+  function syncCheckboxesWithDropdown() {
+    const activeId = inputs.deviceSelect.value;
+    document.querySelectorAll('.device-target-checkbox').forEach(cb => {
+      if (cb.value === activeId) cb.checked = true;
+    });
+  }
+
+  function updateDeviceButtonsVisibility() {
     const deviceId = inputs.deviceSelect.value;
     const currentDevice = authState.devices.find(d => d.id === deviceId);
     if (currentDevice && currentDevice.role === 'master') {
       $('btnOpenShare').style.display = 'flex';
+      $('btnOpenRename').style.display = 'flex';
     } else {
       $('btnOpenShare').style.display = 'none';
+      $('btnOpenRename').style.display = 'none';
     }
   }
 
@@ -304,7 +334,8 @@
     const deviceId = inputs.deviceSelect.value;
     if (!deviceId) return;
     
-    updateShareButtonVisibility();
+    syncCheckboxesWithDropdown();
+    updateDeviceButtonsVisibility();
 
     displays.loader.style.display = 'block';
     displays.historyList.innerHTML = '';
@@ -351,39 +382,64 @@
   }
 
   $('sendBtn').addEventListener('click', async () => {
-    const deviceId = inputs.deviceSelect.value;
     const videoUrl = inputs.videoUrl.value.trim();
     const videoTitle = inputs.videoTitle.value.trim();
 
-    if (!deviceId) return setAppStatus('Valitse laite ensin', 'error');
+    // Get all checked devices
+    const targetCheckboxes = document.querySelectorAll('.device-target-checkbox:checked');
+    const targetIds = Array.from(targetCheckboxes).map(cb => cb.value);
+
+    if (targetIds.length === 0) return setAppStatus('Valitse vähintään yksi laite', 'error');
     if (!videoUrl) return setAppStatus('Syötä videon osoite', 'error');
 
     inputs.sendBtn.disabled = true;
     setAppStatus('Lähetetään...', '');
 
-    try {
-      const res = await fetch(`${baseUrl}/entry`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authState.token}`
-        },
-        body: JSON.stringify({ key: deviceId, value1: videoUrl, value2: videoTitle })
-      });
+    let successCount = 0;
+    let errors = [];
 
-      if (res.status === 401 || res.status === 403) { logout(); return; }
-      if (!res.ok) throw new Error((await res.json()).error || 'Palvelinvirhe');
+    // Send to each selected device
+    for (const deviceId of targetIds) {
+      try {
+        const res = await fetch(`${baseUrl}/entry`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authState.token}`
+          },
+          body: JSON.stringify({ key: deviceId, value1: videoUrl, value2: videoTitle })
+        });
 
-      setAppStatus('Lisätty onnistuneesti!', 'success');
+        if (res.status === 401 || res.status === 403) { logout(); return; }
+        if (!res.ok) throw new Error((await res.json()).error || 'Virhe');
+        
+        successCount++;
+      } catch (err) {
+        const devName = Array.from(targetCheckboxes).find(cb => cb.value === deviceId)?.dataset.name || deviceId;
+        errors.push(`${devName}: ${err.message}`);
+      }
+    }
+
+    if (successCount > 0) {
+      setAppStatus(`Lisätty onnistuneesti ${successCount} laitteelle!`, 'success');
       inputs.videoUrl.value = '';
       inputs.videoTitle.value = '';
-      await loadHistory();
-
-    } catch (err) {
-      setAppStatus(`Virhe: ${err.message}`, 'error');
-    } finally {
-      inputs.sendBtn.disabled = false;
+      await loadHistory(); // Refresh history for the current context
     }
+
+    if (errors.length > 0) {
+      alert("Joitakin virheitä tapahtui:\n" + errors.join("\n"));
+    }
+
+    inputs.sendBtn.disabled = false;
+  });
+
+  $('btnSelectAllDevices').addEventListener('click', (e) => {
+    e.preventDefault();
+    const checkboxes = document.querySelectorAll('.device-target-checkbox');
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+    checkboxes.forEach(cb => cb.checked = !allChecked);
+    $('btnSelectAllDevices').textContent = allChecked ? 'Valitse kaikki' : 'Poista valinnat';
   });
 
   $('refreshBtn').addEventListener('click', loadHistory);
@@ -610,6 +666,87 @@
       alert('Poisto epäonnistui');
     }
   }
+
+  $('btnReleaseDevice').addEventListener('click', async () => {
+    const deviceId = inputs.deviceSelect.value;
+    const device = authState.devices.find(d => d.id === deviceId);
+    if (!device) return;
+
+    const confirmed = confirm(
+      `HALUATKO VARMASTI VAPAUTTAA LAITTEEN?\n\n` +
+      `Tämä poistaa laitteen "${device.friendlyName || deviceId}" tililtäsi ja kaikilta muilta käyttäjiltä.\n\n` +
+      `Laite on tämän jälkeen provisionoitava uudelleen tai "claimattava" uudelleen.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`${baseUrl}/devices/${encodeURIComponent(deviceId)}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${authState.token}` }
+      });
+      
+      if (!res.ok) throw new Error();
+      
+      views.shareModal.style.display = 'none';
+      await loadDevices(); // Refresh list and history
+      setAppStatus('Laite vapautettu onnistuneesti', 'success');
+    } catch (err) {
+      alert('Laitteen vapauttaminen epäonnistui');
+    }
+  });
+
+  // --- RENAME LOGIC ---
+  $('btnOpenRename').addEventListener('click', () => {
+    const deviceId = inputs.deviceSelect.value;
+    const device = authState.devices.find(d => d.id === deviceId);
+    if (!device) return;
+
+    inputs.renameFriendlyName.value = device.friendlyName || '';
+    views.renameModal.style.display = 'flex';
+    $('renameStatus').textContent = '';
+  });
+
+  $('btnCloseRename').addEventListener('click', () => {
+    views.renameModal.style.display = 'none';
+  });
+
+  $('btnSaveRename').addEventListener('click', async () => {
+    const deviceId = inputs.deviceSelect.value;
+    const friendlyName = inputs.renameFriendlyName.value.trim();
+    const status = $('renameStatus');
+
+    if (!friendlyName) return;
+
+    status.textContent = 'Tallennetaan...';
+    status.className = 'status-msg info';
+
+    try {
+      const res = await fetch(`${baseUrl}/devices/${encodeURIComponent(deviceId)}`, {
+        method: 'PATCH',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authState.token}`
+        },
+        body: JSON.stringify({ friendlyName })
+      });
+      
+      if (!res.ok) throw new Error();
+
+      status.textContent = 'Nimi päivitetty!';
+      status.className = 'status-msg success';
+      
+      // Update local state to avoid full reload
+      const dev = authState.devices.find(d => d.id === deviceId);
+      if (dev) dev.friendlyName = friendlyName;
+      
+      renderDeviceSelect(); // Refresh labels in UI
+      setTimeout(() => views.renameModal.style.display = 'none', 1000);
+    } catch (err) {
+      status.textContent = 'Virhe tallennuksessa';
+      status.className = 'status-msg error';
+    }
+  });
 
 
   // Helpers

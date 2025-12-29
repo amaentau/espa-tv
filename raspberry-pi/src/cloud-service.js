@@ -7,8 +7,9 @@ const { TableClient } = require('@azure/data-tables');
  * Implements the BBS pattern for reliable cloud interaction
  */
 class CloudService {
-  constructor(config) {
+  constructor(config, deviceId) {
     this.config = config;
+    this.deviceId = deviceId;
     this.tableClient = null;
     this.pollInterval = null;
     this.isPolling = false;
@@ -92,11 +93,11 @@ class CloudService {
     }]);
 
     // Add test data for the device ID as well
-    this.mockData.set(this.config.deviceId, [{
+    this.mockData.set(this.deviceId, [{
       streamUrl: 'https://live.veo.co/stream/device-test-stream@1234567890',
       timestamp: new Date().toISOString(),
       metadata: {
-        partitionKey: this.config.deviceId,
+        partitionKey: this.deviceId,
         rowKey: 'device-test-row-1',
         testData: true,
         description: 'Test stream for device'
@@ -105,7 +106,7 @@ class CloudService {
 
     console.log('📊 Mock data initialized with test stream URLs');
     console.log(`   - "koti" key: ${this.mockData.get('koti')[0].streamUrl}`);
-    console.log(`   - "${this.config.deviceId}" key: ${this.mockData.get(this.config.deviceId)[0].streamUrl}`);
+    console.log(`   - "${this.deviceId}" key: ${this.mockData.get(this.deviceId)[0].streamUrl}`);
   }
 
   /**
@@ -135,21 +136,21 @@ class CloudService {
       const timestamp = new Date().toISOString();
       const rowKey = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
-      if (!this.mockData.has(this.config.deviceId)) {
-        this.mockData.set(this.config.deviceId, []);
+      if (!this.mockData.has(this.deviceId)) {
+        this.mockData.set(this.deviceId, []);
       }
 
       const entry = {
         streamUrl,
         timestamp,
         metadata: {
-          partitionKey: this.config.deviceId,
+          partitionKey: this.deviceId,
           rowKey,
           ...metadata
         }
       };
 
-      this.mockData.get(this.config.deviceId).unshift(entry); // Add to beginning for latest first
+      this.mockData.get(this.deviceId).unshift(entry); // Add to beginning for latest first
 
       console.log(`💾 [MOCK] Stored stream URL in cloud: ${streamUrl}`);
       return { success: true, timestamp };
@@ -165,7 +166,7 @@ class CloudService {
         const rowKey = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
         await this.tableClient.createEntity({
-          partitionKey: this.config.deviceId,
+          partitionKey: this.deviceId,
           rowKey,
           timestamp,
           streamUrl,
@@ -194,7 +195,7 @@ class CloudService {
    * @param {string} key - The partition key to retrieve data for (defaults to device ID)
    */
   async getLatestStreamUrl(key = null) {
-    const targetKey = key || this.config.deviceId;
+    const targetKey = key || this.deviceId;
     const maxRetries = (this.config.azure && this.config.azure.retryAttempts) || 3;
 
     // BBS HTTP endpoint
@@ -423,7 +424,7 @@ class CloudService {
       polling: this.isPolling,
       lastStreamUrl: this.lastStreamUrl,
       pollInterval: (this.config.azure && this.config.azure.pollInterval) || null,
-      deviceId: this.config.deviceId
+      deviceId: this.deviceId
     };
   }
 
