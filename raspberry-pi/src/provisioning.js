@@ -235,6 +235,11 @@ class ProvisioningManager {
         await execPromise(`sudo iptables -t nat -D PREROUTING -i wlan0 -p tcp --dport 80 -j REDIRECT --to-port ${this.port}`);
       } catch (_) {} // Ignore if rule didn't exist
 
+      console.log('🧹 Disconnecting Hotspot...');
+      try {
+        await execPromise(`sudo nmcli device disconnect wlan0`);
+      } catch (_) {}
+
       console.log('🧹 Removing Hotspot profile...');
       // We use a timeout to ensure we don't hang if nmcli is unresponsive
       const cmd = `sudo nmcli connection delete "${this.hotspotName}"`;
@@ -344,9 +349,25 @@ class ProvisioningManager {
           const safeSsid = escapeShellArg(net.ssid);
           const safePass = net.password ? escapeShellArg(net.password) : '';
           
-          // Delete existing profile with same name to ensure clean state
-          try { await execWithTimeout(`sudo nmcli connection delete ${safeSsid}`); } catch(_) {}
+          // 1. Find and delete ALL existing profiles for this SSID to avoid "flapping"
+          console.log(`   Cleaning up existing profiles for SSID: ${net.ssid}`);
+          try {
+            // Get all connection names that use this SSID
+            const { stdout: existingProfiles } = await execPromise(`nmcli -t -f NAME,802-11-wireless.ssid connection show`);
+            const profilesToDelete = existingProfiles.split('\n')
+              .filter(line => line.endsWith(`:${net.ssid}`))
+              .map(line => line.split(':')[0]);
 
+            for (const profileName of profilesToDelete) {
+              console.log(`   Removing old profile: "${profileName}"`);
+              await execWithTimeout(`sudo nmcli connection delete "${profileName}"`);
+            }
+          } catch (e) {
+            // If SSID search fails, try a simple delete by name as fallback
+            try { await execWithTimeout(`sudo nmcli connection delete ${safeSsid}`); } catch(_) {}
+          }
+
+          // 2. Add fresh profile
           let cmd = `sudo nmcli con add type wifi ifname wlan0 con-name ${safeSsid} ssid ${safeSsid}`;
           if (safePass) {
              cmd += ` wifi-sec.key-mgmt wpa-psk wifi-sec.psk ${safePass}`;

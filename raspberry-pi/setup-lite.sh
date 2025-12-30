@@ -349,6 +349,13 @@ else
   warning "Could not find a network wait-online service. Network might not be ready immediately at boot."
 fi
 
+info "Disabling WiFi Power Management for stability"
+cat >/etc/NetworkManager/conf.d/default-wifi-powersave-on.conf <<EOF
+[connection]
+wifi.powersave = 2
+EOF
+systemctl restart NetworkManager || true
+
 
 optimize_boot_services() {
   local services=(
