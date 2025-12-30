@@ -477,11 +477,16 @@ ID: ${id}
       currentWidth = (this.config.viewport && this.config.viewport.width) || 1920;
     }
 
-    const coordsSource = this.cloudCoordinates || this.config.coordinates || {};
-    const bases = Object.keys(coordsSource).map(n => parseInt(n, 10)).sort((a, b) => a - b);
+    const coordsSource = this.cloudCoordinates || this.config.coordinates || {
+      1280: { play: { x: 63, y: 681 }, fullscreen: { x: 1136, y: 678 }, baseWidth: 1280 },
+      1920: { play: { x: 87, y: 1032 }, fullscreen: { x: 1771, y: 1032 }, baseWidth: 1920 },
+      3840: { play: { x: 114, y: 2124 }, fullscreen: { x: 3643, y: 2122 }, baseWidth: 3840 }
+    };
+    const bases = Object.keys(coordsSource).map(n => parseInt(n, 10)).filter(n => !isNaN(n)).sort((a, b) => a - b);
     
     if (bases.length === 0) {
-      throw new Error('No coordinates available (cloud or local)');
+      console.warn('⚠️ No coordinate bases found even in fallbacks, using hardcoded 1920 defaults');
+      return action === 'play' ? { x: 87, y: 1032 } : { x: 1771, y: 1032 };
     }
 
     let chosenWidth = bases[0];

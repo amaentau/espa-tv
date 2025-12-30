@@ -111,16 +111,16 @@ BBS_URL=https://espa-tv-app.azurewebsites.net
 BBS_KEY=koti
 ```
 
-### Local Provisioning Mode
+### 1. Local Provisioning Mode
 If the application starts without a `config.json` or `credentials.json`, it enters **Provisioning Mode**.
-1. It creates a WiFi hotspot named **VeoSetup** (password: `veo12345`).
+1. It creates a WiFi hotspot named **EspaSetup** (password: `espa12345`).
 2. Connect to this hotspot and open `http://10.42.0.1:3000` in your browser.
 3. Configure your Veo account, WiFi networks, and Device ID.
 4. Click **Save & Restart**.
 
 Note: Manual coordinate adjustment has been removed from provisioning and is now managed centrally via the Azure service.
 
-### Centralized Configuration
+### 2. Centralized Configuration
 Click coordinates for the Veo player are now fetched automatically from the Azure service at startup. This allows for remote maintenance without updating individual devices.
 
 - **Endpoint**: `https://espa-tv-app.azurewebsites.net/config/coordinates`
@@ -133,7 +133,7 @@ Click coordinates for the Veo player are now fetched automatically from the Azur
 The application polls the **ESPA TV BBS** (Bulletin Board Service) for stream updates.
 
 - **BBS URL**: `https://espa-tv-app.azurewebsites.net`
-- **Default Key**: `koti` (can be overridden via `BBS_KEY` env var)
+- **Default Key**: Uses physical hardware serial (e.g. `rpi-a4f637f7591a24fe`) or can be overridden via `BBS_KEY` env var.
 
 ### Stream Configuration (config.json)
 
@@ -235,7 +235,7 @@ The Raspberry Pi component now uses Azure Table Storage for reliable cloud inter
    ```bash
    # In .env file
    AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=youraccount;AccountKey=yourkey;EndpointSuffix=core.windows.net"
-   AZURE_TABLE_NAME="veoDongleStreams"
+   AZURE_TABLE_NAME="espaTvStreams"
    AZURE_STORAGE_ENABLED=true
    AZURE_POLL_INTERVAL=30000  # 30 seconds
    AZURE_RETRY_ATTEMPTS=3
@@ -259,7 +259,8 @@ The Raspberry Pi component now uses Azure Table Storage for reliable cloud inter
 #### Device Registration
 
 Each Raspberry Pi device automatically:
-- Uses its `DEVICE_ID` as the partition key in Azure Table Storage
+- Uses its physical serial number as `DEVICE_ID` (stored in `.device-id`)
+- Uses this `DEVICE_ID` as the partition key in Azure Table Storage
 - Polls for new stream URLs every 30 seconds (configurable)
 - Stores stream URLs with timestamps for history tracking
 - Provides REST API endpoints for manual control
@@ -345,7 +346,7 @@ xset q
 #### Permission Issues on Raspberry Pi
 ```bash
 # Fix permissions
-sudo chown -R veodongle:veodongle /opt/veo-dongle
+sudo chown -R espatv:espatv /opt/espa-tv
 
 # Check service logs
 sudo journalctl -f -u espa-tv.service
@@ -376,7 +377,7 @@ If the browser fails to launch, the application enters recovery mode:
    sudo journalctl -f -u espa-tv.service
 
    # In development
-   npm run dev 2>&1 | tee veo-dongle.log
+   npm run dev 2>&1 | tee espa-tv.log
    ```
 
 ### Performance Optimization
@@ -443,3 +444,4 @@ For issues and questions:
 - **v1.1.0**: Enhanced error handling and recovery mode
 - **v1.2.0**: Multi-platform support (WSL/Raspberry Pi)
 - **v1.3.0**: Improved authentication and configuration management
+- **v1.4.0**: Migrated to Espa-TV branding and physical identity logic

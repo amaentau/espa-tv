@@ -590,6 +590,34 @@ app.post('/devices/announce', async (req, res) => {
   }
 });
 
+// 9. Public Entry Fetch (for devices)
+app.get('/entries/:key', async (req, res) => {
+  try {
+    const key = req.params.key;
+    if (!key) return res.status(400).json({ error: 'key is required' });
+
+    // Public access to entries by key (Bulletin Board System)
+    const client = getTableClient(TABLE_NAME_ENTRIES);
+    const filter = `PartitionKey eq '${key.replace(/'/g, "''")}'`;
+    
+    const results = [];
+    for await (const entity of client.listEntities({ queryOptions: { filter } })) {
+      results.push({
+        value1: entity.value1,
+        value2: entity.value2,
+        timestamp: entity.timestamp
+      });
+      if (results.length >= 200) break; 
+    }
+
+    results.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
+    return res.json(results.slice(0, 10));
+  } catch (err) {
+    console.error('GET /entries/:key error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
 // --- Permission Helpers ---
 async function checkAndAutoProvision(email, deviceId) {
   const permClient = getTableClient(TABLE_NAME_PERMISSIONS);
@@ -788,38 +816,6 @@ app.post('/entry', authenticateToken, async (req, res) => {
     return res.status(201).json({ ok: true, timestamp });
   } catch (err) {
     console.error('POST /entry error:', err);
-    return res.status(500).json({ error: 'Internal Server Error' });
-  }
-});
-
-app.get('/entries/:key', authenticateToken, async (req, res) => {
-  try {
-    const key = req.params.key;
-    if (!key) return res.status(400).json({ error: 'key is required' });
-
-    // Step 1: Permission Check (Legacy compatibility included)
-    const hasAccess = await checkAndAutoProvision(req.user.email, key);
-    if (!hasAccess) {
-      return res.status(403).json({ error: 'No permission for this device' });
-    }
-
-    const client = getTableClient(TABLE_NAME_ENTRIES);
-    const filter = `PartitionKey eq '${key.replace(/'/g, "''")}'`;
-    
-    const results = [];
-    for await (const entity of client.listEntities({ queryOptions: { filter } })) {
-      results.push({
-        value1: entity.value1,
-        value2: entity.value2,
-        timestamp: entity.timestamp
-      });
-      if (results.length >= 200) break; 
-    }
-
-    results.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
-    return res.json(results.slice(0, 10));
-  } catch (err) {
-    console.error('GET /entries/:key error:', err);
     return res.status(500).json({ error: 'Internal Server Error' });
   }
 });

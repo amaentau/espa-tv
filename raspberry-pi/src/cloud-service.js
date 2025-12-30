@@ -18,29 +18,30 @@ class CloudService {
     this.bbsUrl = (config.azure && config.azure.bbsUrl) || null; // BBS HTTP endpoint
   }
 
-  /**
-   * Initialize the cloud service
-   */
   async initialize() {
-    if (!this.config.azure || !this.config.azure.enabled) {
-      console.log('☁️ Azure Table Storage not enabled, skipping cloud initialization');
-      return;
-    }
+    // Ensure config is at least an object
+    this.config = this.config || {};
+    this.config.azure = this.config.azure || {};
 
     // Check if BBS URL is provided (HTTP-based access)
+    // We prioritize environment variable if available
+    this.bbsUrl = process.env.BBS_URL || this.config.azure.bbsUrl || this.bbsUrl;
+
     if (this.bbsUrl) {
       console.log(`☁️ Using BBS HTTP endpoint: ${this.bbsUrl}`);
       this.useBbsHttp = true;
       
-      // Start polling for updates
-      this.startPolling();
+      // Start polling only if explicitly enabled
+      if (this.config.azure.enabled) {
+        this.startPolling();
+      }
       
       console.log('✅ BBS HTTP service initialized successfully');
       return;
     }
 
-    if (!this.config.azure.storageConnectionString) {
-      console.error('❌ Azure storage connection string or BBS URL not provided');
+    if (!this.config.azure.enabled) {
+      console.log('☁️ Azure Table Storage not enabled, and no BBS URL found. Skipping cloud initialization.');
       return;
     }
 
@@ -331,10 +332,16 @@ class CloudService {
           clearTimeout(timeoutId);
           
           if (!response.ok) {
+            console.warn(`⚠️ BBS HTTP coordinates fetch failed (Status: ${response.status})`);
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
           }
           
           const coordinates = await response.json();
+          if (!coordinates || typeof coordinates !== 'object' || Object.keys(coordinates).length === 0) {
+            console.warn('⚠️ BBS HTTP returned empty or invalid coordinates');
+            return null;
+          }
+
           console.log('📍 [BBS HTTP] Retrieved coordinates from cloud');
           return coordinates;
         } catch (error) {
