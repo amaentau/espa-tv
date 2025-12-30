@@ -170,7 +170,8 @@ apt-get install -y \
   libasound2 \
   matchbox-window-manager \
   xterm \
-  network-manager
+  network-manager \
+  iw
 
 # Ensure dhcpcd is disabled if we are using NetworkManager to avoid conflicts
 if systemctl list-unit-files | grep -q dhcpcd; then
@@ -350,10 +351,25 @@ systemctl disable NetworkManager-wait-online.service || true
 systemctl disable systemd-networkd-wait-online.service || true
 
 info "Disabling WiFi Power Management for stability"
+mkdir -p /etc/NetworkManager/conf.d
 cat >/etc/NetworkManager/conf.d/default-wifi-powersave-on.conf <<EOF
 [connection]
 wifi.powersave = 2
 EOF
+
+# Also try to disable it via iw for immediate effect and as a backup
+if command -v iw >/dev/null 2>&1; then
+  info "Disabling WiFi power save via iw"
+  iw dev wlan0 set power_save off || true
+fi
+
+# Ensure wlan0 is managed by NetworkManager
+info "Ensuring wlan0 is managed by NetworkManager"
+if [[ -f /etc/network/interfaces ]]; then
+  # Comment out wlan0 lines in /etc/network/interfaces to prevent conflicts with NetworkManager
+  sed -i '/wlan0/s/^/#/' /etc/network/interfaces || true
+fi
+
 systemctl restart NetworkManager || true
 
 

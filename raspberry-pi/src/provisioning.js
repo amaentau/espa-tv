@@ -238,7 +238,9 @@ class ProvisioningManager {
 
       console.log('🧹 Disconnecting Hotspot...');
       try {
-        await execPromise(`sudo nmcli device disconnect wlan0`);
+        // We target the connection specifically, NOT the device.
+        // nmcli device disconnect wlan0 would prevent autoconnecting to other networks.
+        await execPromise(`sudo nmcli connection down "${this.hotspotName}"`);
       } catch (_) {}
 
       console.log('🧹 Removing Hotspot profile...');
