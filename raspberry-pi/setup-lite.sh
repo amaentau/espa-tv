@@ -337,17 +337,17 @@ if ! grep -q "fastboot" "$CMDLINE_FILE"; then
   info "Added fastboot optimizations to cmdline.txt"
 fi
 
-# Ensure NetworkManager Wait Online is enabled for robust connectivity
-# (assuming NetworkManager is managing the connection, which is standard on modern RPi OS Lite)
-if systemctl list-unit-files | grep -q NetworkManager-wait-online.service; then
-  info "Enabling NetworkManager-wait-online.service to ensure network is ready before kiosk starts"
-  systemctl enable NetworkManager-wait-online.service || true
-elif systemctl list-unit-files | grep -q systemd-networkd-wait-online.service; then
-  info "Enabling systemd-networkd-wait-online.service"
-  systemctl enable systemd-networkd-wait-online.service || true
-else
-  warning "Could not find a network wait-online service. Network might not be ready immediately at boot."
+# Ensure NetworkManager is managing the connection
+if systemctl list-unit-files | grep -q NetworkManager.service; then
+  info "Enabling NetworkManager.service"
+  systemctl enable NetworkManager.service || true
 fi
+
+# We DISABLE wait-online services because they can block the entire boot process
+# and prevent SSH from starting if WiFi is slow. Our Node app handles the wait.
+info "Disabling wait-online services to prevent boot-time blocking"
+systemctl disable NetworkManager-wait-online.service || true
+systemctl disable systemd-networkd-wait-online.service || true
 
 info "Disabling WiFi Power Management for stability"
 cat >/etc/NetworkManager/conf.d/default-wifi-powersave-on.conf <<EOF

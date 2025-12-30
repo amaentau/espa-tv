@@ -321,6 +321,18 @@ ID: ${id}
     console.log('Initializing Espa-TV Player...');
 
     try {
+      // 0. Network Sanity: Ensure no leftover hotspot is running
+      // This prevents the device from being "stuck" in AP mode if it crashed during provisioning
+      if (!this.needsProvisioning) {
+        try {
+          console.log('🧹 Cleaning up any leftover hotspot state...');
+          const pm = new ProvisioningManager(this.app, this.port);
+          await pm.cleanupHotspot();
+        } catch (e) {
+          // Ignore failures here
+        }
+      }
+
       // 1. Setup and start server first (required for splash page and API)
       this.setupServer();
       await new Promise((resolve, reject) => {

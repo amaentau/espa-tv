@@ -47,7 +47,8 @@ class ProvisioningManager {
       console.log('   Hotspot connection profile exists.');
     } catch (e) {
       console.log('   Creating hotspot connection profile...');
-      await execPromise(`sudo nmcli con add type wifi ifname wlan0 con-name "${this.hotspotName}" autoconnect yes ssid "${this.ssid}"`);
+      // IMPORTANT: autoconnect MUST be 'no' so it doesn't interfere with normal WiFi on boot
+      await execPromise(`sudo nmcli con add type wifi ifname wlan0 con-name "${this.hotspotName}" autoconnect no ssid "${this.ssid}"`);
       await execPromise(`sudo nmcli con modify "${this.hotspotName}" 802-11-wireless.mode ap 802-11-wireless.band bg ipv4.method shared`);
       await execPromise(`sudo nmcli con modify "${this.hotspotName}" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "${this.password}"`);
     }
