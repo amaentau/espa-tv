@@ -197,9 +197,9 @@ ID: ${id}
   /**
    * Wait for internet connectivity with timeout
    */
-  async waitForInternet(timeoutMs = 60000, intervalMs = 5000) {
+  async waitForInternet(timeoutMs = 60000, intervalMs = 1000) {
     const startTime = Date.now();
-    console.log(`🌐 Waiting for internet connectivity (timeout: ${timeoutMs/1000}s)...`);
+    console.log(`🌐 Waiting for internet connectivity (timeout: ${timeoutMs/1000}s, interval: ${intervalMs}ms)...`);
     await this.updateSplash('Odotetaan verkkoyhteyttä...');
     
     while (Date.now() - startTime < timeoutMs) {
@@ -215,17 +215,19 @@ ID: ${id}
     return false;
   }
 
-  async announceToCloud() {
+  async announceToCloud(skipWait = false) {
     if (!this.credentials || !this.credentials.email || !this.config.azure || !this.config.azure.bbsUrl) {
       console.log('ℹ️ Skipping cloud announcement: Missing credentials or BBS URL');
-      return;
+      return true;
     }
 
     // Wait for internet before announcing, as we might have just booted after WiFi config
-    const hasInternet = await this.waitForInternet(60000); // Wait up to 1 minute
-    
-    if (!hasInternet) {
-      console.warn('⚠️ Proceeding with announcement despite no internet detection (may fail)');
+    if (!skipWait) {
+      const hasInternet = await this.waitForInternet(60000); // Wait up to 1 minute
+      if (!hasInternet) {
+        console.warn('⚠️ Cannot announce device: No internet connectivity detected');
+        return false;
+      }
     }
 
     await this.updateSplash('Ilmoitetaan laite pilvipalveluun...');
@@ -319,12 +321,17 @@ ID: ${id}
 
       await this.updateSplash('Tarkistetaan verkkoyhteyttä...');
       
-      // 3. Announce device to cloud
-      // We MUST await this to ensure the cloud knows we are online before we try to fetch our config/URL
+      // 3. Wait for Internet and Announce device to cloud
+      // We MUST ensure internet is available and announcement is done before we try to fetch our config/URL
+      const internetReady = await this.waitForInternet(60000);
+      if (!internetReady) {
+        throw new Error('Verkkoyhteyttä ei saatu muodostettua. Pilvisynkronointi ei ole mahdollista.');
+      }
+
       try {
-        await this.announceToCloud();
+        await this.announceToCloud(true); // Skip internal wait since we just did it
       } catch (err) {
-        console.error('Final failure in device announcement:', err.message);
+        console.error('Failure in device announcement:', err.message);
       }
 
       // 4. Fetch stream URL and coordinates
