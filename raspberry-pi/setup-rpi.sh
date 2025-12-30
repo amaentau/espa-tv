@@ -153,13 +153,13 @@ fi
 # Resolve service run user (default to the invoking non-root user or 'pi')
 SERVICE_USER="${SUDO_USER:-$USER}"
 if [[ "$SERVICE_USER" == "root" || -z "$SERVICE_USER" ]]; then
-    SERVICE_USER="pi"
+    SERVICE_USER="espatv"
 fi
 SERVICE_UID=$(id -u "$SERVICE_USER" 2>/dev/null || echo 1000)
 
 # Create application directory structure
 print_status "Setting up application directory..."
-APP_DIR="/opt/veo-dongle"
+APP_DIR="/opt/espa-tv"
 $SUDO mkdir -p "$APP_DIR"
 $SUDO cp -a . "$APP_DIR"/
 $SUDO chown -R "$SERVICE_USER":"$SERVICE_USER" "$APP_DIR"
@@ -186,10 +186,10 @@ print_success "Service will run as user: $SERVICE_USER (uid=$SERVICE_UID)"
 if [[ ! -f .env ]]; then
     print_status "Creating .env file..."
     cat > .env << EOL
-# Veo Dongle Raspberry Pi Environment Configuration
+# Espa-TV Raspberry Pi Environment Configuration
 # Production settings for Raspberry Pi
 
-# Veo Stream Configuration
+# Stream Configuration
 VEO_STREAM_URL=https://live.veo.co/stream/YOUR_STREAM_ID
 LOGIN_URL=https://live.veo.co/login
 LOGIN_ENABLED=true
@@ -207,7 +207,7 @@ DEVICE_ID=raspberry-pi-prod-$(date +%s)
 
 # Azure Table Storage Configuration (recommended for production cloud interaction)
 AZURE_STORAGE_CONNECTION_STRING=
-AZURE_TABLE_NAME=veoDongleStreams
+AZURE_TABLE_NAME=espaTvStreams
 AZURE_STORAGE_ENABLED=false
 AZURE_POLL_INTERVAL=30000
 AZURE_RETRY_ATTEMPTS=3

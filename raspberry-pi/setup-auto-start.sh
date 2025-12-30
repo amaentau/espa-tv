@@ -31,6 +31,14 @@ fi
 info "Setting up automatic startup for Espa-TV Player on Raspberry Pi"
 info "This script configures systemd to start the application after boot AND network connectivity"
 
+# Cleanup old service name if it exists
+if systemctl list-unit-files | grep -q veo-dongle.service; then
+  info "Detected old veo-dongle.service. Stopping and disabling it."
+  systemctl stop veo-dongle.service >/dev/null 2>&1 || true
+  systemctl disable veo-dongle.service >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/veo-dongle.service
+fi
+
 # Verify we're on Raspberry Pi hardware
 verify_raspberry_pi() {
   if [[ ! -f /proc/device-tree/model ]]; then

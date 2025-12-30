@@ -121,8 +121,15 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 ensure_raspberry_pi
+info "Setting up Espa-TV on Raspberry Pi Lite (Xorg + fullscreen kiosk)"
 
-info "Setting up Veo Dongle on Raspberry Pi Lite (Xorg + fullscreen kiosk)"
+# Cleanup old service name if it exists
+if systemctl list-unit-files | grep -q veo-dongle.service; then
+  info "Detected old veo-dongle.service. Stopping and disabling it."
+  systemctl stop veo-dongle.service >/dev/null 2>&1 || true
+  systemctl disable veo-dongle.service >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/veo-dongle.service
+fi
 
 if ! id "$SERVICE_USER" &>/dev/null; then
   info "Creating dedicated user '${SERVICE_USER}'"
@@ -245,6 +252,7 @@ mkdir -p /etc/X11/xorg.conf.d
 
 # Remove potential conflicting configurations or previous failed attempts
 rm -f /etc/X11/xorg.conf.d/99-veo-modesetting.conf
+rm -f /etc/X11/xorg.conf.d/99-espa-tv-modesetting.conf
 
 # Create a robust Xorg config that tries to find the correct DRM device.
 # RPi 5 often has card1 as the primary display controller (vc4).
@@ -268,9 +276,9 @@ fi
 
 info "Configuring Xorg to use DRM device: ${VC4_CARD}"
 
-cat >/etc/X11/xorg.conf.d/99-veo-modesetting.conf <<EOF
+cat >/etc/X11/xorg.conf.d/99-espa-tv-modesetting.conf <<EOF
 Section "Device"
-    Identifier      "VeoModesetting"
+    Identifier      "EspaTvModesetting"
     Driver          "modesetting"
     Option          "Kmsdev" "${VC4_CARD}"
     Option          "AccelMethod" "glamor"
@@ -284,7 +292,7 @@ EndSection
 
 Section "Screen"
     Identifier      "Screen0"
-    Device          "VeoModesetting"
+    Device          "EspaTvModesetting"
     Monitor         "Monitor0"
     DefaultDepth    24
     SubSection "Display"

@@ -10,9 +10,9 @@ class ProvisioningManager {
   constructor(app, port) {
     this.app = app;
     this.port = port || 3000;
-    this.hotspotName = 'VeoHotspot';
-    this.ssid = 'VeoSetup';
-    this.password = 'veo12345';
+    this.hotspotName = 'EspaHotspot';
+    this.ssid = 'EspaSetup';
+    this.password = 'espa12345';
   }
 
   async start() {
@@ -128,7 +128,7 @@ class ProvisioningManager {
         configuredWifi = stdout.split('\n')
           .filter(line => line.includes(':802-11-wireless'))
           .map(line => line.split(':')[0])
-          .filter(name => name !== 'VeoHotspot'); // Exclude our hotspot
+          .filter(name => name !== 'EspaHotspot' && name !== 'VeoHotspot'); // Exclude our hotspots
       } catch (e) {
         console.warn('Failed to list wifi connections:', e.message);
       }
