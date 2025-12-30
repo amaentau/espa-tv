@@ -690,21 +690,21 @@ ID: ${id}
       executablePath: resolvedExecutable,
       args: collectArgs,
       timeout: browserConfig.timeout ?? 30000,
-      ignoreDefaultArgs: browserConfig.ignoreDefaultArgs ?? ['--enable-automation']
+      ignoreDefaultArgs: browserConfig.ignoreDefaultArgs ?? ['--enable-automation'],
+      env: {
+        ...process.env,
+        DISPLAY: process.env.DISPLAY || ':0',
+        XAUTHORITY: process.env.XAUTHORITY || (process.env.HOME ? path.join(process.env.HOME, '.Xauthority') : undefined),
+        ...(browserConfig.env || {})
+      }
     };
 
     if (browserConfig.userDataDir) {
       launchOptions.userDataDir = browserConfig.userDataDir;
     }
 
-    if (browserConfig.env && typeof browserConfig.env === 'object') {
-      launchOptions.env = {
-        ...process.env,
-        ...browserConfig.env
-      };
-    }
-
-    this.logDebug('🔧 Launch options:', launchOptions);
+    this.logDebug('🔧 Launch options (env.DISPLAY):', launchOptions.env.DISPLAY);
+    this.logDebug('🔧 Launch options (env.XAUTHORITY):', launchOptions.env.XAUTHORITY);
     
     // Retry launch up to 3 times (useful during busy boot sequence)
     let lastError = null;
@@ -716,6 +716,7 @@ ID: ${id}
       } catch (e) {
         lastError = e;
         console.warn(`⚠️ Browser launch attempt ${attempt} failed: ${e.message}`);
+        console.warn(`   Environment - DISPLAY: "${process.env.DISPLAY}", XAUTHORITY: "${process.env.XAUTHORITY}", HOME: "${process.env.HOME}"`);
         await this.sleep(2000);
       }
     }

@@ -12,6 +12,9 @@ export DISPLAY="${DISPLAY:-:0}"
 export XAUTHORITY="${HOME}/.Xauthority"
 export CHROMIUM_PATH="${CHROMIUM_PATH:-/usr/bin/chromium-browser}"
 
+echo "[INFO] DISPLAY=${DISPLAY}"
+echo "[INFO] XAUTHORITY=${XAUTHORITY}"
+
 # Check for mandatory configuration
 if [[ ! -f "${APP_ROOT}/config.json" ]] || [[ ! -f "${APP_ROOT}/credentials.json" ]]; then
   echo "[WARNING] Configuration or credentials missing! Forcing provisioning mode."
