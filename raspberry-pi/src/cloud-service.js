@@ -205,7 +205,11 @@ class CloudService {
           const url = `${this.bbsUrl}/entries/${encodeURIComponent(targetKey)}`;
           console.log(`📡 [BBS HTTP] Fetching entries from: ${url}`);
           
-          const response = await fetch(url);
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+          const response = await fetch(url, { signal: controller.signal });
+          clearTimeout(timeoutId);
           
           if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -320,7 +324,11 @@ class CloudService {
           const url = `${this.bbsUrl}/config/coordinates`;
           console.log(`📡 [BBS HTTP] Fetching coordinates from: ${url}`);
           
-          const response = await fetch(url);
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+          const response = await fetch(url, { signal: controller.signal });
+          clearTimeout(timeoutId);
           
           if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);

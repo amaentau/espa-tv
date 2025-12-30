@@ -51,8 +51,24 @@ function checkRebootLoop() {
   return false;
 }
 
+function clearRebootHistory() {
+  try {
+    if (fs.existsSync(STATE_FILE)) {
+      fs.unlinkSync(STATE_FILE);
+      console.log('🧹 Reboot history cleared.');
+    }
+    if (fs.existsSync(MARKER_FILE)) {
+      fs.unlinkSync(MARKER_FILE);
+    }
+  } catch (e) {
+    console.error('Failed to clear reboot history:', e.message);
+  }
+}
+
 if (require.main === module) {
-  if (checkRebootLoop()) {
+  if (process.argv.includes('--clear')) {
+    clearRebootHistory();
+  } else if (checkRebootLoop()) {
     process.exit(1); // Signal loop detected
   } else {
     process.exit(0); // Normal boot

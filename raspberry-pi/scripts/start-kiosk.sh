@@ -42,7 +42,7 @@ wait_for_connectivity() {
   done
 
   echo "[WARNING] Network unreachable after ${max_attempts} attempts; proceeding anyway"
-  return 1
+  return 0
 }
 
 # Skip connectivity check if config.json is missing (Provisioning Mode)

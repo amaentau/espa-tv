@@ -6,6 +6,7 @@ const http = require('http');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const { exec } = require('child_process');
 const ProvisioningManager = require('./provisioning');
 const CloudService = require('./cloud-service');
 require('dotenv').config();
@@ -230,15 +231,21 @@ ID: ${id}
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       console.log(`📡 Announcing device ${this.deviceId} to cloud (attempt ${attempt}/${maxRetries})...`);
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
         const res = await fetch(`${this.config.azure.bbsUrl}/devices/announce`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          deviceId: this.deviceId,
-          email: this.credentials.email,
-          friendlyName: this.config.friendlyName || `ESPA-Pi-${this.deviceId.slice(-4)}`
-        })
+          signal: controller.signal,
+          body: JSON.stringify({
+            deviceId: this.deviceId,
+            email: this.credentials.email,
+            friendlyName: this.config.friendlyName || `ESPA-Pi-${this.deviceId.slice(-4)}`
+          })
         });
+        
+        clearTimeout(timeoutId);
         
         if (res.ok) {
           console.log('✅ Device announcement successful');
@@ -360,6 +367,9 @@ ID: ${id}
       }
 
       console.log(`✅ Espa-TV Player ready. Access at http://localhost:${this.port}`);
+
+      // Clear reboot history after successful startup
+      this.clearRebootHistory();
     } catch (error) {
       console.error('❌ Initialization failed:', error.message);
       console.log('Starting recovery mode...');
@@ -367,6 +377,17 @@ ID: ${id}
     }
   }
 
+
+  clearRebootHistory() {
+    const scriptPath = path.join(__dirname, '..', 'scripts', 'reboot-check.js');
+    exec(`node "${scriptPath}" --clear`, (error, stdout, stderr) => {
+      if (error) {
+        console.warn(`⚠️ Failed to clear reboot history: ${error.message}`);
+        return;
+      }
+      if (stdout) console.log(stdout.trim());
+    });
+  }
 
   setupRecoveryMode() {
     console.log('Setting up recovery mode...');
@@ -832,7 +853,12 @@ ID: ${id}
       const endpoint = `${this.config.azure.bbsUrl}/entries/${encodeURIComponent(key)}`;
       console.log(`📡 Fetching BBS entries from: ${endpoint}`);
 
-      const response = await fetch(endpoint);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+      const response = await fetch(endpoint, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
         throw new Error(`BBS HTTP ${response.status}: ${response.statusText}`);
       }
