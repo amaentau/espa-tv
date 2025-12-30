@@ -138,7 +138,8 @@ class ProvisioningManager {
         password: creds.password || '',
         deviceId: deviceId,
         friendlyName: config.friendlyName || '',
-        wifiNetworks: configuredWifi
+        wifiNetworks: configuredWifi,
+        headlessOk: fs.existsSync(path.join(__dirname, '..', '.headless_ok'))
       });
     });
 
@@ -290,6 +291,18 @@ class ProvisioningManager {
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
     console.log('💾 Saved config.json');
+
+    // 2.5 Handle Headless Override
+    const headlessPath = path.join(__dirname, '..', '.headless_ok');
+    if (data.headlessOk === true) {
+      fs.writeFileSync(headlessPath, 'true');
+      console.log('💾 Enabled headless mode (.headless_ok)');
+    } else {
+      if (fs.existsSync(headlessPath)) {
+        fs.unlinkSync(headlessPath);
+        console.log('🧹 Disabled headless mode (removed .headless_ok)');
+      }
+    }
 
     // Clear reboot history to prevent immediate re-triggering of provisioning mode on next boot
     try {

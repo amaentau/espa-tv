@@ -200,6 +200,7 @@ ID: ${id}
   async waitForInternet(timeoutMs = 60000, intervalMs = 5000) {
     const startTime = Date.now();
     console.log(`🌐 Waiting for internet connectivity (timeout: ${timeoutMs/1000}s)...`);
+    await this.updateSplash('Odotetaan verkkoyhteyttä...');
     
     while (Date.now() - startTime < timeoutMs) {
       if (await this.checkInternet()) {
@@ -227,6 +228,7 @@ ID: ${id}
       console.warn('⚠️ Proceeding with announcement despite no internet detection (may fail)');
     }
 
+    await this.updateSplash('Ilmoitetaan laite pilvipalveluun...');
     const maxRetries = 5;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       console.log(`📡 Announcing device ${this.deviceId} to cloud (attempt ${attempt}/${maxRetries})...`);
@@ -277,6 +279,21 @@ ID: ${id}
     console.log('Initializing Espa-TV Player...');
 
     try {
+      // 1. Setup server first (required for splash page)
+      this.setupServer();
+
+      // 2. Launch browser ASAP to show splash screen
+      if (!this.needsProvisioning) {
+        try {
+          await this.launchBrowser();
+          const splashUrl = `http://localhost:${this.port}/splash.html`;
+          await this.page.goto(splashUrl);
+          await this.updateSplash('Käynnistetään...');
+        } catch (e) {
+          console.error('Failed to show splash screen:', e.message);
+        }
+      }
+
       // Provisioning check
       if (this.needsProvisioning) {
         const provisioning = new ProvisioningManager(this.app, this.port);
@@ -285,6 +302,8 @@ ID: ${id}
         return;
       }
 
+      await this.updateSplash('Tarkistetaan verkkoyhteyttä...');
+      
       // Announce device to cloud (non-blocking but we want it to happen)
       this.announceToCloud().catch(err => {
         console.error('Final failure in background announcement:', err.message);
@@ -295,12 +314,14 @@ ID: ${id}
         this.streamUrl = process.env.STREAM_URL;
         console.log(`🎯 Using configured Stream URL: ${this.streamUrl}`);
       } else {
+        await this.updateSplash('Synkronoidaan pilvipalvelun kanssa...');
         // Initialize cloud service and fetch stream URL + coordinates
         await this.cloudService.initialize();
         
         const bbsKey = process.env.BBS_KEY || this.deviceId;
         console.log(`🔍 Fetching stream URL and coordinates from BBS (key: ${bbsKey})...`);
         
+        await this.updateSplash('Haetaan lähetyksen tietoja...');
         const [bbsUrl, coords] = await Promise.all([
           this.fetchBbsStreamUrlOnce(bbsKey),
           this.cloudService.getCoordinates()
@@ -326,12 +347,6 @@ ID: ${id}
          throw new Error('No Stream URL configured (env: STREAM_URL) or found in BBS');
       }
 
-      // Setup server
-      this.setupServer();
-
-      // Launch browser
-      await this.launchBrowser();
-
       // Setup auth handlers
       console.log('🛡️ Setting up auth handlers...');
       try {
@@ -342,6 +357,7 @@ ID: ${id}
       }
 
       // Try stream first - it might already be authenticated
+      await this.updateSplash('Avataan lähetystä...');
       console.log('🎬 Loading stream...');
 
       try {
@@ -356,9 +372,11 @@ ID: ${id}
       const currentUrl = this.page.url();
 
       if (currentUrl.includes('login') || currentUrl.includes('signin')) {
+        await this.updateSplash('Kirjaudutaan palveluun...');
         console.log('🔐 Redirected to login, authenticating...');
         try {
           await this.loginToVeo();
+          await this.updateSplash('Palataan lähetykseen...');
           console.log('🎬 Going back to stream after login...');
           await this.goToStream();
         } catch (error) {
@@ -374,6 +392,18 @@ ID: ${id}
       console.error('❌ Initialization failed:', error.message);
       console.log('Starting recovery mode...');
       this.setupRecoveryMode();
+    }
+  }
+
+  async updateSplash(message) {
+    if (this.page) {
+      try {
+        await this.page.evaluate((msg) => {
+          if (window.updateStatus) window.updateStatus(msg);
+        }, message);
+      } catch (e) {
+        // Ignore errors if page is navigating
+      }
     }
   }
 

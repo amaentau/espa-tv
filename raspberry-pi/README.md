@@ -111,8 +111,21 @@ BBS_URL=https://espa-tv-app.azurewebsites.net
 BBS_KEY=koti
 ```
 
+## 🛠️ Startup & Provisioning Logic
+
+The application follows a robust startup sequence:
+
+1.  **Mandatory Config Check**: If `config.json` or `credentials.json` is missing, it **always** enters Provisioning Mode.
+2.  **HDMI Check (Physical UI)**:
+    *   If an HDMI display is connected, it starts normally.
+    *   If NO HDMI is detected, it waits 10 seconds (for TV sync).
+    *   If still no HDMI, it enters **Provisioning Mode** automatically.
+3.  **Headless Override (Dev Mode)**:
+    *   If a file `.headless_ok` exists in the `raspberry-pi` folder, the HDMI check is skipped.
+    *   This can be enabled in the Provisioning UI or by running `touch .headless_ok`.
+
 ### 1. Local Provisioning Mode
-If the application starts without a `config.json` or `credentials.json`, it enters **Provisioning Mode**.
+If the application enters **Provisioning Mode**:
 1. It creates a WiFi hotspot named **EspaSetup** (password: `espa12345`).
 2. Connect to this hotspot and open `http://10.42.0.1:3000` in your browser.
 3. Configure your Veo account, WiFi networks, and Device ID.

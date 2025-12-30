@@ -12,13 +12,38 @@ export DISPLAY="${DISPLAY:-:0}"
 export XAUTHORITY="${HOME}/.Xauthority"
 export CHROMIUM_PATH="${CHROMIUM_PATH:-/usr/bin/chromium-browser}"
 
-# Check for reboot loop - if 3 reboots in 120s, force provisioning mode
-# Do this EARLY, before waiting for network
-if ! node "${SCRIPT_DIR}/reboot-check.js"; then
-  echo "[WARNING] Reboot loop detected! Forcing provisioning mode."
+# Check for mandatory configuration
+if [[ ! -f "${APP_ROOT}/config.json" ]] || [[ ! -f "${APP_ROOT}/credentials.json" ]]; then
+  echo "[WARNING] Configuration or credentials missing! Forcing provisioning mode."
   export FORCE_PROVISIONING=true
+# Check for headless override (Dev Mode)
+elif [[ -f "${APP_ROOT}/.headless_ok" ]]; then
+  echo "[INFO] .headless_ok marker found. Proceeding in headless mode."
+  export FORCE_PROVISIONING=false
 else
-  echo "[INFO] Boot check passed."
+  # Check for HDMI connection
+  check_hdmi() {
+    for port in /sys/class/drm/card*-HDMI-A-*/status; do
+      if [ -f "$port" ] && grep -q "^connected" "$port"; then
+        return 0
+      fi
+    done
+    return 1
+  }
+
+  echo "[INFO] Checking for HDMI connection..."
+  if ! check_hdmi; then
+    echo "[INFO] No HDMI detected. Waiting 10s for TV sync..."
+    sleep 10
+    if ! check_hdmi; then
+      echo "[WARNING] Still no HDMI. Forcing provisioning mode."
+      export FORCE_PROVISIONING=true
+    else
+      echo "[INFO] HDMI detected after sync."
+    fi
+  else
+    echo "[INFO] HDMI connection verified."
+  fi
 fi
 
 wait_for_connectivity() {
@@ -45,12 +70,11 @@ wait_for_connectivity() {
   return 0
 }
 
-# Skip connectivity check if config.json is missing (Provisioning Mode)
-# OR if FORCE_PROVISIONING is set (Reboot Loop)
+# Skip connectivity check - we now handle this inside Node.js with a splash screen
 if [[ ! -f "${APP_ROOT}/config.json" ]] || [[ "${FORCE_PROVISIONING:-false}" == "true" ]]; then
-  echo "[INFO] Entering Provisioning Mode (Config missing or Reboot Loop detected). Skipping connectivity check."
+  echo "[INFO] Entering Provisioning Mode."
 else
-  wait_for_connectivity
+  echo "[INFO] Starting application (Network check deferred to splash screen)."
 fi
 
 cd "${APP_ROOT}"
