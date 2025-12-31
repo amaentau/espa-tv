@@ -180,46 +180,57 @@ ID: ${id}
       const os = require('os');
       const interfaces = os.networkInterfaces();
       let hasIp = false;
+      let ipDetails = [];
       
       for (const name of Object.keys(interfaces)) {
-        // Ignore loopback and internal interfaces
         if (name === 'lo' || name === 'docker0') continue;
         
         for (const info of interfaces[name]) {
           if (!info.internal && (info.family === 'IPv4' || info.family === 'IPv6')) {
             hasIp = true;
-            break;
+            ipDetails.push(`${name}: ${info.address}`);
           }
         }
-        if (hasIp) break;
       }
 
-      if (!hasIp) return false;
+      if (!hasIp) {
+        this.logDebug('🌐 No non-loopback IP address found.');
+        return false;
+      }
 
-      // 2. Try DNS resolution (lighter than full HTTP request)
+      // 2. Try DNS resolution
       const dns = require('dns').promises;
       try {
-        await dns.lookup('google.com');
+        // Try multiple reliable DNS names to avoid single-point failure
+        await Promise.any([
+          dns.lookup('google.com'),
+          dns.lookup('cloudflare.com'),
+          dns.lookup('8.8.8.8') // Reverse check or just direct IP ping-like check
+        ]);
       } catch (e) {
+        this.logDebug('🌐 DNS resolution failed.');
         return false;
       }
 
       // 3. Final verification with a lightweight HTTP check
       const testUrl = this.config.azure?.bbsUrl || 'https://www.google.com/generate_204';
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
       
       try {
         const response = await fetch(testUrl, { 
           method: 'HEAD', 
-          signal: controller.signal
+          signal: controller.signal,
+          headers: { 'Cache-Control': 'no-cache' }
         });
         clearTimeout(timeoutId);
-        return response.ok || response.status === 204;
+        return response.ok || response.status === 204 || response.status === 302;
       } catch (e) {
+        this.logDebug(`🌐 HTTP check failed for ${testUrl}: ${e.message}`);
         return false;
       }
     } catch (e) {
+      this.logDebug(`🌐 checkInternet unexpected error: ${e.message}`);
       return false;
     }
   }

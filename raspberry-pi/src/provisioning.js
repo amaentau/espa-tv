@@ -160,14 +160,14 @@ class ProvisioningManager {
         await this.handleSave(req.body);
         res.json({ success: true });
         
-        // Restart
+        // Restart after a longer delay to ensure the browser received the success response
+        // and the user had a moment to read it before the hotspot disappears.
         setTimeout(async () => {
           console.log('🔄 Configuration saved. Cleaning up hotspot and restarting system...');
           await this.cleanupHotspot();
           // Exit process; systemd (restart=always) will relaunch us.
-          // With config present, we will start in normal mode.
           process.exit(0);
-        }, 2000);
+        }, 5000);
       } catch (e) {
         console.error('❌ Save failed:', e);
         res.status(500).json({ error: e.message });
@@ -234,21 +234,29 @@ class ProvisioningManager {
       console.log('🧹 Removing Captive Portal rules...');
       try {
         await execPromise(`sudo iptables -t nat -D PREROUTING -i wlan0 -p tcp --dport 80 -j REDIRECT --to-port ${this.port}`);
-      } catch (_) {} // Ignore if rule didn't exist
+      } catch (_) {} 
 
-      console.log('🧹 Disconnecting Hotspot...');
+      // Check if hotspot connection exists before trying to bring it down/delete
+      let hotspotExists = false;
       try {
-        // We target the connection specifically, NOT the device.
-        // nmcli device disconnect wlan0 would prevent autoconnecting to other networks.
-        await execPromise(`sudo nmcli connection down "${this.hotspotName}"`);
+        const { stdout } = await execPromise(`nmcli connection show "${this.hotspotName}"`);
+        hotspotExists = !!stdout;
       } catch (_) {}
 
-      console.log('🧹 Removing Hotspot profile...');
-      // We use a timeout to ensure we don't hang if nmcli is unresponsive
-      const cmd = `sudo nmcli connection delete "${this.hotspotName}"`;
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000));
-      await Promise.race([execPromise(cmd), timeoutPromise]);
-      console.log('✅ Hotspot profile removed');
+      if (hotspotExists) {
+        console.log('🧹 Disconnecting Hotspot...');
+        try {
+          await execPromise(`sudo nmcli connection down "${this.hotspotName}"`);
+        } catch (_) {}
+
+        console.log('🧹 Removing Hotspot profile...');
+        const cmd = `sudo nmcli connection delete "${this.hotspotName}"`;
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000));
+        await Promise.race([execPromise(cmd), timeoutPromise]);
+        console.log('✅ Hotspot profile removed');
+      } else {
+        console.log('ℹ️ Hotspot profile already gone.');
+      }
     } catch (e) {
       console.warn('⚠️ Failed to remove hotspot profile (non-fatal):', e.message);
     }
@@ -382,11 +390,14 @@ class ProvisioningManager {
           // Add profile (10s timeout)
           await execWithTimeout(cmd, 10000);
           
-          // Enable autoconnect
+          // Enable autoconnect and set high priority to ensure it is preferred over old/weak networks
           await execWithTimeout(`sudo nmcli con modify ${safeSsid} connection.autoconnect yes`);
+          await execWithTimeout(`sudo nmcli con modify ${safeSsid} connection.autoconnect-priority 100`);
           
-          // Set priority? We could set priority based on order in list (higher number = higher priority)
-          // nmcli connection modify ID connection.autoconnect-priority 10
+          // Ensure IPv6 doesn't block the connection if the router has issues with it
+          await execWithTimeout(`sudo nmcli con modify ${safeSsid} ipv6.method ignore`);
+
+          console.log(`✅ Configured ${net.ssid} with high priority`);
           
         } catch (e) {
           console.error(`   ⚠️ Failed to configure ${net.ssid}:`, e.message);

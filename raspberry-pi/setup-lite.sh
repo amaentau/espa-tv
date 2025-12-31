@@ -344,6 +344,12 @@ if systemctl list-unit-files | grep -q NetworkManager.service; then
   systemctl enable NetworkManager.service || true
 fi
 
+# Set WiFi country code to FI (Finland) for better frequency compatibility
+if command -v raspi-config >/dev/null 2>&1; then
+  info "Setting WiFi country to FI"
+  raspi-config nonint do_wifi_country FI || true
+fi
+
 # We DISABLE wait-online services because they can block the entire boot process
 # and prevent SSH from starting if WiFi is slow. Our Node app handles the wait.
 info "Disabling wait-online services to prevent boot-time blocking"
@@ -467,8 +473,8 @@ fi
 cat >"${SERVICE_FILE}" <<EOF
 [Unit]
 Description=ESPA TV Kiosk (Xorg)
-After=network.target
-Wants=network.target
+After=network.target NetworkManager.service
+Wants=network.target NetworkManager.service
 
 [Service]
 User=${SERVICE_USER}

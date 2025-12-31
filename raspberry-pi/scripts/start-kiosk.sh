@@ -39,8 +39,13 @@ else
     echo "[INFO] No HDMI detected. Waiting 10s for TV sync..."
     sleep 10
     if ! check_hdmi; then
-      echo "[WARNING] Still no HDMI. Forcing provisioning mode."
-      export FORCE_PROVISIONING=true
+      if [[ -f "${APP_ROOT}/config.json" ]]; then
+        echo "[WARNING] Still no HDMI, but config.json exists. Proceeding in normal mode (headless)."
+        export FORCE_PROVISIONING=false
+      else
+        echo "[WARNING] Still no HDMI and no config found. Forcing provisioning mode."
+        export FORCE_PROVISIONING=true
+      fi
     else
       echo "[INFO] HDMI detected after sync."
     fi
