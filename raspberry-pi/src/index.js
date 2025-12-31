@@ -174,41 +174,38 @@ ID: ${id}
   /**
    * Check if internet connectivity is available
    */
+  /**
+   * Check if internet connectivity is available
+   */
   async checkInternet() {
     try {
-      // 1. Check if we have a valid IP address first (passive check)
       const os = require('os');
       const interfaces = os.networkInterfaces();
       let hasIp = false;
-      let ipDetails = [];
       
       for (const name of Object.keys(interfaces)) {
         if (name === 'lo' || name === 'docker0') continue;
-        
-        for (const info of interfaces[name]) {
+        const iface = interfaces[name];
+        if (!iface) continue;
+        for (const info of iface) {
           if (!info.internal && (info.family === 'IPv4' || info.family === 'IPv6')) {
             hasIp = true;
-            ipDetails.push(`${name}: ${info.address}`);
+            break;
           }
         }
+        if (hasIp) break;
       }
 
-      if (!hasIp) {
-        this.logDebug('🌐 No non-loopback IP address found.');
-        return false;
-      }
+      if (!hasIp) return false;
 
-      // 2. Try DNS resolution
+      // 2. Try DNS resolution (multiple targets for resilience)
       const dns = require('dns').promises;
       try {
-        // Try multiple reliable DNS names to avoid single-point failure
         await Promise.any([
           dns.lookup('google.com'),
-          dns.lookup('cloudflare.com'),
-          dns.lookup('8.8.8.8') // Reverse check or just direct IP ping-like check
+          dns.lookup('cloudflare.com')
         ]);
       } catch (e) {
-        this.logDebug('🌐 DNS resolution failed.');
         return false;
       }
 
@@ -226,11 +223,9 @@ ID: ${id}
         clearTimeout(timeoutId);
         return response.ok || response.status === 204 || response.status === 302;
       } catch (e) {
-        this.logDebug(`🌐 HTTP check failed for ${testUrl}: ${e.message}`);
         return false;
       }
     } catch (e) {
-      this.logDebug(`🌐 checkInternet unexpected error: ${e.message}`);
       return false;
     }
   }
@@ -253,7 +248,27 @@ ID: ${id}
       }
 
       failCount++;
-      // Back off after 5 failures to give the network stack more breathing room
+
+      // Periodic diagnostics logging
+      if (failCount % 5 === 0) {
+        try {
+          exec('nmcli -t -f DEVICE,STATE,CONNECTION device status', (err, stdout) => {
+            if (!err && stdout) console.log(`⏳ [Diagnostics] ${stdout.trim().replace(/\n/g, ' | ')}`);
+          });
+        } catch (_) {}
+      }
+
+      // If we've waited ~20s and still no IP, try to nudge the hardware/NetworkManager
+      if (failCount === 7) {
+        console.log('🔄 Connectivity stall detected - attempting to nudge wlan0...');
+        try {
+          exec('sudo nmcli device reapply wlan0 || sudo nmcli device connect wlan0', (err) => {
+             if (err) console.warn('⚠️ Nudge failed:', err.message);
+          });
+        } catch (e) {}
+      }
+
+      // Back off after some failures
       if (failCount > 5) {
         currentInterval = 5000;
       }

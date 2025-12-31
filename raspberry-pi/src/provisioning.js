@@ -254,6 +254,13 @@ class ProvisioningManager {
         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000));
         await Promise.race([execPromise(cmd), timeoutPromise]);
         console.log('✅ Hotspot profile removed');
+
+        // Ensure the device is explicitly managed by NetworkManager and re-scans
+        console.log('🧹 Ensuring wlan0 is managed and ready...');
+        try {
+          await execPromise('sudo nmcli device set wlan0 managed yes');
+          await execPromise('sudo nmcli device reapply wlan0 || true');
+        } catch (_) {}
       } else {
         console.log('ℹ️ Hotspot profile already gone.');
       }
@@ -371,7 +378,7 @@ class ProvisioningManager {
 
             for (const profileName of profilesToDelete) {
               console.log(`   Removing old profile: "${profileName}"`);
-              await execWithTimeout(`sudo nmcli connection delete "${profileName}"`);
+              await execWithTimeout(`sudo nmcli connection delete ${escapeShellArg(profileName)}`);
             }
           } catch (e) {
             // If SSID search fails, try a simple delete by name as fallback
@@ -379,25 +386,34 @@ class ProvisioningManager {
           }
 
           // 2. Add fresh profile
-          let cmd = `sudo nmcli con add type wifi ifname wlan0 con-name ${safeSsid} ssid ${safeSsid}`;
+          let addCmd = `sudo nmcli con add type wifi ifname wlan0 con-name ${safeSsid} ssid ${safeSsid}`;
           if (safePass) {
-             cmd += ` wifi-sec.key-mgmt wpa-psk wifi-sec.psk ${safePass}`;
+             addCmd += ` wifi-sec.key-mgmt wpa-psk wifi-sec.psk ${safePass}`;
           }
 
-          // Log safely
-          console.log(`   Executing: ${cmd.replace(/psk '.*?'/, "psk '***'")}`);
+          console.log(`   Creating profile: ${addCmd.replace(/psk '.*?'/, "psk '***'")}`);
+          await execWithTimeout(addCmd, 10000);
           
-          // Add profile (10s timeout)
-          await execWithTimeout(cmd, 10000);
+          // 3. Configure all properties in one go for efficiency and reliability
+          const hostname = data.friendlyName ? data.friendlyName.replace(/[^a-zA-Z0-9-]/g, '-') : 'espa-tv-pi';
           
-          // Enable autoconnect and set high priority to ensure it is preferred over old/weak networks
-          await execWithTimeout(`sudo nmcli con modify ${safeSsid} connection.autoconnect yes`);
-          await execWithTimeout(`sudo nmcli con modify ${safeSsid} connection.autoconnect-priority 100`);
-          
-          // Ensure IPv6 doesn't block the connection if the router has issues with it
-          await execWithTimeout(`sudo nmcli con modify ${safeSsid} ipv6.method ignore`);
+          const modCmd = [
+            `sudo nmcli con modify ${safeSsid}`,
+            `connection.autoconnect yes`,
+            `connection.autoconnect-priority 100`,
+            `ipv4.method auto`,
+            `ipv4.may-fail no`,
+            `ipv4.dhcp-client-id mac`,
+            `ipv4.dhcp-hostname ${hostname}`,
+            `ipv4.dhcp-timeout 30`,
+            `ipv6.method ignore`,
+            `802-11-wireless.cloned-mac-address preserve`
+          ].join(' ');
 
-          console.log(`✅ Configured ${net.ssid} with high priority`);
+          console.log(`   Applying configurations for ${net.ssid}...`);
+          await execWithTimeout(modCmd, 5000);
+
+          console.log(`✅ Configured ${net.ssid} successfully`);
           
         } catch (e) {
           console.error(`   ⚠️ Failed to configure ${net.ssid}:`, e.message);

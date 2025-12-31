@@ -54,41 +54,15 @@ else
   fi
 fi
 
-wait_for_connectivity() {
-  local target_url="https://www.google.com/generate_204"
-  local attempts=0
-  local max_attempts=30
-  local delay=2
+# Settling delay for system services (especially during cold boot)
+sleep 2
 
-  while (( attempts < max_attempts )); do
-    if curl -fsS --head "${target_url}" >/dev/null 2>&1; then
-      echo "[INFO] Network connectivity verified"
-      return 0
-    fi
-
-    attempts=$((attempts + 1))
-    echo "[INFO] Waiting for network connectivity (${attempts}/${max_attempts})"
-    sleep "${delay}"
-    if (( delay < 5 )); then
-      delay=$((delay + 1))
-    fi
-  done
-
-  echo "[WARNING] Network unreachable after ${max_attempts} attempts; proceeding anyway"
-  return 0
-}
-
-# Skip connectivity check - we now handle this inside Node.js with a splash screen
 if [[ ! -f "${APP_ROOT}/config.json" ]] || [[ "${FORCE_PROVISIONING:-false}" == "true" ]]; then
   echo "[INFO] Entering Provisioning Mode."
 else
   echo "[INFO] Starting application (Network check deferred to splash screen)."
 fi
 
-# Settling delay for system services (especially during cold boot)
-sleep 2
-
 cd "${APP_ROOT}"
-
 exec /usr/bin/env node src/index.js
 

@@ -173,10 +173,20 @@ apt-get install -y \
   network-manager \
   iw
 
-# Ensure dhcpcd is disabled if we are using NetworkManager to avoid conflicts
+# Ensure dhcpcd is disabled and MASKED to avoid conflicts with NetworkManager
 if systemctl list-unit-files | grep -q dhcpcd; then
-  info "Disabling dhcpcd to avoid conflicts with NetworkManager"
-  systemctl disable --now dhcpcd >/dev/null 2>&1 || true
+  info "Masking dhcpcd to avoid conflicts with NetworkManager"
+  systemctl stop dhcpcd >/dev/null 2>&1 || true
+  systemctl disable dhcpcd >/dev/null 2>&1 || true
+  systemctl mask dhcpcd >/dev/null 2>&1 || true
+fi
+
+# Also mask systemd-networkd if it's present, as it can conflict
+if systemctl list-unit-files | grep -q systemd-networkd.service; then
+  info "Masking systemd-networkd"
+  systemctl stop systemd-networkd >/dev/null 2>&1 || true
+  systemctl disable systemd-networkd >/dev/null 2>&1 || true
+  systemctl mask systemd-networkd >/dev/null 2>&1 || true
 fi
 
 # Allow nmcli without password for the service user (for provisioning)
@@ -356,8 +366,15 @@ info "Disabling wait-online services to prevent boot-time blocking"
 systemctl disable NetworkManager-wait-online.service || true
 systemctl disable systemd-networkd-wait-online.service || true
 
-info "Disabling WiFi Power Management for stability"
+# Configure NetworkManager to use internal DHCP client for better reliability on Pi
+info "Configuring NetworkManager for internal DHCP"
 mkdir -p /etc/NetworkManager/conf.d
+cat >/etc/NetworkManager/conf.d/00-dhcp-internal.conf <<EOF
+[main]
+dhcp=internal
+EOF
+
+info "Disabling WiFi Power Management for stability"
 cat >/etc/NetworkManager/conf.d/default-wifi-powersave-on.conf <<EOF
 [connection]
 wifi.powersave = 2
