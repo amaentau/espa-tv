@@ -1374,30 +1374,68 @@ ID: ${id}
         return;
       }
 
-      // Click submit button with comprehensive search
+      // Wait a bit more for form to be fully interactive after filling fields
+      await this.sleep(1000);
+
+      // Click submit button with comprehensive search and retry logic
       this.logDebug('🔘 Looking for submit button...');
 
       let clicked = false;
+      const maxRetries = 3;
 
-      // Try standard selectors first
-      const submitSelectors = [
-        'button[type="submit"]',
-        'input[type="submit"]',
-        'button[name="login"]',
-        'button[name="signin"]',
-        '[data-testid*="login" i]'
-      ];
+      for (let attempt = 1; attempt <= maxRetries && !clicked; attempt++) {
+        this.logDebug(`🔄 Submit button attempt ${attempt}/${maxRetries}`);
 
-      for (const sel of submitSelectors) {
-        try {
-          const elements = await this.page.$$(sel);
-          if (elements.length > 0) {
-            await elements[0].click();
-            clicked = true;
-            this.logDebug(`✅ Clicked submit button: ${sel}`);
-            break;
+        // Try standard selectors first
+        const submitSelectors = [
+          'button[type="submit"]',
+          'input[type="submit"]',
+          'button[name="login"]',
+          'button[name="signin"]',
+          '[data-testid*="login" i]'
+        ];
+
+        for (const sel of submitSelectors) {
+          try {
+            // Wait for element to be visible and clickable (not disabled)
+            await this.page.waitForFunction(
+              (selector) => {
+                const el = document.querySelector(selector);
+                return el && el.offsetParent !== null && !el.disabled &&
+                       (el.type !== 'submit' || !el.form || el.form.checkValidity() !== false);
+              },
+              { timeout: attempt === 1 ? 5000 : 2000 }, // Shorter timeout on retries
+              sel
+            );
+
+            const elements = await this.page.$$(sel);
+            if (elements.length > 0) {
+              // Additional check: ensure element is actually clickable
+              const isClickable = await elements[0].evaluate(el =>
+                !el.disabled && el.offsetParent !== null &&
+                window.getComputedStyle(el).visibility !== 'hidden'
+              );
+
+              if (isClickable) {
+                await elements[0].click();
+                clicked = true;
+                this.logDebug(`✅ Clicked submit button: ${sel} (attempt ${attempt})`);
+                break;
+              } else {
+                this.logDebug(`⚠️ Submit button found but not clickable: ${sel} (attempt ${attempt})`);
+              }
+            }
+          } catch (e) {
+            this.logDebug(`⚠️ Submit button selector failed: ${sel} (attempt ${attempt}) - ${e.message}`);
           }
-        } catch (_) {}
+        }
+
+        // If not clicked and not the last attempt, wait before retry
+        if (!clicked && attempt < maxRetries) {
+          const retryDelay = attempt * 1000; // 1s, 2s, 3s delays
+          this.logDebug(`⏳ Submit button not found/clickable, retrying in ${retryDelay}ms...`);
+          await this.sleep(retryDelay);
+        }
       }
 
       // No aggressive text-search clicking; fall back to pressing Enter
@@ -1407,8 +1445,14 @@ ID: ${id}
         try {
           const formSubmitted = await this.page.evaluate(() => {
             const form = document.querySelector('form');
-            if (form) {
+            if (form && form.checkValidity()) {
               form.submit();
+              return true;
+            }
+            // Try to find submit button within form and click it
+            const submitBtn = form?.querySelector('button[type="submit"], input[type="submit"]');
+            if (submitBtn && !submitBtn.disabled) {
+              submitBtn.click();
               return true;
             }
             return false;
@@ -1417,7 +1461,9 @@ ID: ${id}
             this.logDebug('✅ Submitted form directly');
             clicked = true;
           }
-        } catch (_) {}
+        } catch (e) {
+          this.logDebug(`⚠️ Form submission failed: ${e.message}`);
+        }
       }
 
       if (!clicked) {
@@ -1425,12 +1471,14 @@ ID: ${id}
         await this.page.keyboard.press('Enter');
       }
 
-      // Wait briefly for navigation or form submission
-      const postSubmitWait = new Promise(resolve => setTimeout(resolve, 3000));
-      await Promise.race([
-        this.page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 5000 }).catch(() => {}),
-        postSubmitWait
-      ]);
+      // Wait for navigation or form submission with extended timeout for slow networks
+      const postSubmitWait = new Promise(resolve => setTimeout(resolve, 8000)); // Increased to 8 seconds
+      const navigationPromise = this.page.waitForNavigation({
+        waitUntil: 'networkidle2',
+        timeout: 10000 // Increased to 10 seconds
+      }).catch(() => {});
+
+      await Promise.race([navigationPromise, postSubmitWait]);
       this.logDebug(`📍 After login attempt: ${this.page.url()}`);
 
       // Check if we're still on a login page or if login succeeded
