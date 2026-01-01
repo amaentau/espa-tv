@@ -335,7 +335,7 @@ class CloudService {
         } catch (error) {
           console.error('❌ All BBS HTTP coordinates retrieve attempts failed:', error.message);
           return null; // Fallback to local if possible, but user wants centralized
-      }
+        }
       }
     }
     return null;
