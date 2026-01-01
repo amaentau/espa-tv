@@ -172,10 +172,66 @@ ID: ${id}
   }
 
   /**
-   * Check if internet connectivity is available
+   * Check basic internet connectivity (IP + DNS only, fast)
    */
+  async checkBasicConnectivity() {
+    try {
+      console.log('🔍 Checking basic network connectivity...');
+
+      // 1. Check IP address assignment
+      const os = require('os');
+      const interfaces = os.networkInterfaces();
+      let hasIp = false;
+      let activeInterfaces = [];
+
+      for (const name of Object.keys(interfaces)) {
+        if (name === 'lo' || name === 'docker0') continue;
+        const iface = interfaces[name];
+        if (!iface) continue;
+
+        let ifaceHasIp = false;
+        for (const info of iface) {
+          if (!info.internal && (info.family === 'IPv4' || info.family === 'IPv6') && info.address !== '127.0.0.1') {
+            ifaceHasIp = true;
+            activeInterfaces.push(`${name}: ${info.address}`);
+            break;
+          }
+        }
+
+        if (ifaceHasIp) {
+          hasIp = true;
+        }
+      }
+
+      if (!hasIp) {
+        console.log('❌ No IP address assigned to network interfaces');
+        return false;
+      }
+
+      console.log(`✅ IP addresses found: ${activeInterfaces.join(', ')}`);
+
+      // 2. Try DNS resolution (required for BBS connectivity)
+      console.log('🔍 Testing DNS resolution...');
+      const dns = require('dns').promises;
+      try {
+        await Promise.any([
+          dns.lookup('google.com'),
+          dns.lookup('cloudflare.com')
+        ]);
+        console.log('✅ DNS resolution working');
+        return true;
+      } catch (e) {
+        console.log(`❌ DNS resolution failed: ${e.message}`);
+        return false;
+      }
+    } catch (e) {
+      console.log(`❌ Basic connectivity check error: ${e.message}`);
+      return false;
+    }
+  }
+
   /**
-   * Check if internet connectivity is available
+   * Check full internet connectivity (IP + DNS + BBS required)
    */
   async checkInternet() {
     try {
@@ -227,7 +283,7 @@ ID: ${id}
         return false;
       }
 
-      // 3. Verify BBS connectivity (REQUIRED for app functionality)
+      // Verify BBS connectivity (REQUIRED for app functionality)
       if (!this.config.azure?.bbsUrl) {
         console.log('❌ No BBS URL configured - application cannot function without cloud service');
         return false;
@@ -303,23 +359,48 @@ ID: ${id}
 
     console.log(`🌐 Starting network connectivity check (BBS required, timeout: ${timeoutMs/1000}s)`);
     console.log(`📊 BBS URL: ${this.config.azure?.bbsUrl || 'NOT CONFIGURED'}`);
-    console.log(`⏱️ Will retry BBS connectivity up to 8 times with 30s timeout each`);
+    console.log(`⏱️ Phase 1: Fast IP/DNS check, Phase 2: BBS connectivity (8 attempts × 30s)`);
     await this.updateSplash('Odotetaan verkkoyhteyttä...');
+
+    let basicConnectivityEstablished = false;
 
     while (Date.now() - startTime < timeoutMs) {
       const elapsed = Math.round((Date.now() - startTime) / 1000);
       console.log(`🔄 Network check #${failCount + 1} (${elapsed}s elapsed)...`);
 
-      if (await this.checkInternet()) {
+      // Phase 1: Fast basic connectivity check (if not yet established)
+      if (!basicConnectivityEstablished) {
+        if (await this.checkBasicConnectivity()) {
+          console.log('🎯 Basic connectivity (IP + DNS) established - now checking BBS...');
+          basicConnectivityEstablished = true;
+          await this.updateSplash('Perusverkko saatavilla - tarkistetaan pilvipalvelu...');
+          // Reset fail count and use faster intervals for BBS checks
+          failCount = 0;
+          currentInterval = 1000; // 1s intervals for BBS checks
+        }
+      }
+
+      // Phase 2: Full connectivity check (basic + BBS)
+      if (basicConnectivityEstablished && await this.checkInternet()) {
         const totalTime = Math.round((Date.now() - startTime) / 1000);
-        console.log(`✅ Network connectivity established after ${totalTime}s`);
+        console.log(`✅ Full network connectivity established after ${totalTime}s`);
         return true;
+      }
+
+      // If basic connectivity not established yet, use original logic
+      if (!basicConnectivityEstablished) {
+        // Continue with original check for basic connectivity
+        if (await this.checkInternet()) {
+          const totalTime = Math.round((Date.now() - startTime) / 1000);
+          console.log(`✅ Network connectivity established after ${totalTime}s`);
+          return true;
+        }
       }
 
       failCount++;
 
-      // Enhanced diagnostics at different intervals
-      if (failCount === 2) {
+      // Enhanced diagnostics at different intervals (adjusted for two-phase approach)
+      if ((failCount === 2 && !basicConnectivityEstablished) || (failCount === 1 && basicConnectivityEstablished)) {
         console.log('🔍 Gathering detailed network diagnostics...');
         try {
           // Check NetworkManager status
@@ -342,40 +423,47 @@ ID: ${id}
         }
       }
 
-      // Network recovery attempts at different stages
-      if (failCount === 3) {
-        console.log('🔄 Attempting WiFi reconnection...');
-        try {
-          exec('sudo nmcli device disconnect wlan0 2>/dev/null; sleep 2; sudo nmcli device connect wlan0', (err) => {
-            if (err) {
-              console.log(`⚠️ WiFi reconnection failed: ${err.message}`);
-            } else {
-              console.log('✅ WiFi reconnection attempted');
-            }
-          });
-        } catch (e) {
-          console.log('⚠️ WiFi reconnection error');
+      // Network recovery attempts (different timing for each phase)
+      if (!basicConnectivityEstablished) {
+        // Phase 1: Basic connectivity recovery
+        if (failCount === 3) {
+          console.log('🔄 Attempting WiFi reconnection for basic connectivity...');
+          try {
+            exec('sudo nmcli device disconnect wlan0 2>/dev/null; sleep 2; sudo nmcli device connect wlan0', (err) => {
+              if (err) {
+                console.log(`⚠️ WiFi reconnection failed: ${err.message}`);
+              } else {
+                console.log('✅ WiFi reconnection attempted');
+              }
+            });
+          } catch (e) {
+            console.log('⚠️ WiFi reconnection error');
+          }
         }
-      }
 
-      if (failCount === 6) {
-        console.log('🔄 Attempting NetworkManager restart...');
-        try {
-          exec('sudo systemctl restart NetworkManager', (err) => {
-            if (err) {
-              console.log(`⚠️ NetworkManager restart failed: ${err.message}`);
-            } else {
-              console.log('✅ NetworkManager restart attempted');
-            }
-          });
-        } catch (e) {
-          console.log('⚠️ NetworkManager restart error');
+        if (failCount === 6) {
+          console.log('🔄 Attempting NetworkManager restart for basic connectivity...');
+          try {
+            exec('sudo systemctl restart NetworkManager', (err) => {
+              if (err) {
+                console.log(`⚠️ NetworkManager restart failed: ${err.message}`);
+              } else {
+                console.log('✅ NetworkManager restart attempted');
+              }
+            });
+          } catch (e) {
+            console.log('⚠️ NetworkManager restart error');
+          }
         }
-      }
 
-      // Progressive backoff with longer intervals
-      if (failCount > 3) {
-        currentInterval = Math.min(currentInterval * 1.5, 8000); // Max 8s interval
+        // Faster backoff for basic connectivity phase
+        if (failCount > 3) {
+          currentInterval = Math.min(currentInterval * 1.2, 5000); // Max 5s for basic checks
+        }
+      } else {
+        // Phase 2: BBS connectivity - less aggressive recovery, focus on waiting
+        // Skip recovery attempts during BBS phase since connectivity is established
+        // Keep 1s intervals for BBS checks
       }
 
       const remaining = Math.round((timeoutMs - (Date.now() - startTime)) / 1000);
