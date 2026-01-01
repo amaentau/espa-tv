@@ -1197,6 +1197,169 @@ ID: ${id}
     return false;
   }
 
+  /**
+   * Enhanced wait for video player to be fully ready for interaction
+   */
+  async waitForPlayerReady(maxWaitMs = 10000) {
+    const start = Date.now();
+    this.logDebug('🎬 Waiting for player to be fully ready...');
+
+    while (Date.now() - start < maxWaitMs) {
+      try {
+        const playerState = await this.page.evaluate(() => {
+          // Check for player container
+          const container = document.querySelector('.veo-player-container') || document.querySelector('veo-player');
+          if (!container) return { ready: false, reason: 'no_container' };
+
+          // Check for video element
+          const video = container.querySelector('video') || document.querySelector('video');
+          if (!video) return { ready: false, reason: 'no_video' };
+
+          // Check if video has loaded metadata
+          if (!video.duration || video.duration === 0 || isNaN(video.duration)) {
+            return { ready: false, reason: 'no_metadata' };
+          }
+
+          // Check if video can play (not in error state)
+          if (video.error) return { ready: false, reason: 'video_error' };
+
+          // Check if video dimensions are reasonable (not 0x0)
+          if (video.videoWidth === 0 || video.videoHeight === 0) {
+            return { ready: false, reason: 'no_dimensions' };
+          }
+
+          // Check if player controls are visible/accessible
+          const controls = container.querySelector('.vjs-control-bar') || container.querySelector('[class*="control"]');
+          if (controls && window.getComputedStyle(controls).display === 'none') {
+            return { ready: false, reason: 'controls_hidden' };
+          }
+
+          return {
+            ready: true,
+            duration: video.duration,
+            dimensions: `${video.videoWidth}x${video.videoHeight}`,
+            canPlay: video.readyState >= 3 // HAVE_FUTURE_DATA or better
+          };
+        });
+
+        if (playerState.ready) {
+          this.logDebug(`✅ Player ready: ${playerState.dimensions}, duration: ${playerState.duration}s`);
+          return true;
+        } else {
+          this.logDebug(`⏳ Player not ready: ${playerState.reason}`);
+        }
+      } catch (e) {
+        this.logDebug(`⚠️ Player state check error: ${e.message}`);
+      }
+
+      await this.sleep(500); // Check every 500ms
+    }
+
+    this.logDebug('❌ Player readiness timeout');
+    return false;
+  }
+
+  /**
+   * Check if video is already playing
+   */
+  async isVideoPlaying() {
+    try {
+      return await this.page.evaluate(() => {
+        const video = document.querySelector('video');
+        if (!video) return false;
+
+        // Check multiple indicators of playing state
+        return !!(video.currentTime > 0 && !video.paused && !video.ended && video.readyState >= 3);
+      });
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * Alternative approach: Wait for video events to indicate readiness
+   * This can be used instead of or in addition to waitForPlayerReady
+   */
+  async waitForVideoEvents(timeoutMs = 10000) {
+    try {
+      console.log('🎬 Setting up video event monitoring...');
+
+      // Inject event listeners and wait for specific events
+      const eventsReceived = await this.page.evaluate((timeout) => {
+        return new Promise((resolve) => {
+          const video = document.querySelector('video');
+          if (!video) {
+            resolve({ success: false, reason: 'no_video' });
+            return;
+          }
+
+          const events = [];
+          const eventTimeout = setTimeout(() => {
+            resolve({
+              success: false,
+              reason: 'timeout',
+              events: events
+            });
+          }, timeout);
+
+          const recordEvent = (eventName) => {
+            events.push(eventName);
+            console.log(`🎬 Video event: ${eventName}`);
+          };
+
+          // Listen for key readiness events
+          video.addEventListener('loadstart', () => recordEvent('loadstart'));
+          video.addEventListener('loadedmetadata', () => recordEvent('loadedmetadata'));
+          video.addEventListener('loadeddata', () => recordEvent('loadeddata'));
+          video.addEventListener('canplay', () => recordEvent('canplay'));
+          video.addEventListener('canplaythrough', () => recordEvent('canplaythrough'));
+          video.addEventListener('play', () => recordEvent('play'));
+          video.addEventListener('playing', () => recordEvent('playing'));
+
+          // Success condition: either canplay + reasonable duration, or actual playing
+          const checkSuccess = () => {
+            if (events.includes('canplay') && video.duration > 0 && !isNaN(video.duration)) {
+              clearTimeout(eventTimeout);
+              resolve({
+                success: true,
+                reason: 'canplay_with_duration',
+                events: events,
+                duration: video.duration
+              });
+            } else if (events.includes('playing')) {
+              clearTimeout(eventTimeout);
+              resolve({
+                success: true,
+                reason: 'already_playing',
+                events: events
+              });
+            }
+          };
+
+          // Check immediately in case events already fired
+          checkSuccess();
+
+          // Set up periodic checks
+          const interval = setInterval(checkSuccess, 200);
+
+          // Clean up interval on timeout
+          setTimeout(() => clearInterval(interval), timeout);
+        });
+      }, timeoutMs);
+
+      if (eventsReceived.success) {
+        console.log(`✅ Video events indicate ready: ${eventsReceived.reason}`);
+        return true;
+      } else {
+        console.log(`⚠️ Video events timeout: ${eventsReceived.reason}`);
+        return false;
+      }
+    } catch (e) {
+      console.log(`⚠️ Video event monitoring failed: ${e.message}`);
+      return false;
+    }
+  }
+
 
   async fetchBbsStreamUrlOnce(key) {
     try {
@@ -1607,9 +1770,47 @@ ID: ${id}
         console.log('🔐 On login page; not attempting to play background video');
         return;
       }
-      // Give the player surface a short moment if needed
-      await this.waitForPlayerSurface(3000);
+
+      // Step 1: Wait for basic player surface
+      console.log('🎬 Step 1: Waiting for player surface...');
+      const hasSurface = await this.waitForPlayerSurface(5000); // Increased timeout
+      if (!hasSurface) {
+        throw new Error('Player surface not found within timeout');
+      }
+
+      // Step 2: Check if video is already playing (don't click if it is!)
+      console.log('🎬 Step 2: Checking if video is already playing...');
+      const alreadyPlaying = await this.isVideoPlaying();
+      if (alreadyPlaying) {
+        console.log('✅ Video is already playing - skipping play click');
+        return;
+      }
+
+      // Step 3: Wait for player to be fully ready
+      console.log('🎬 Step 3: Waiting for player to be fully ready...');
+      const playerReady = await this.waitForPlayerReady(8000); // 8 second timeout for readiness
+      if (!playerReady) {
+        console.log('⚠️ Player not fully ready, but attempting play anyway...');
+      }
+
+      // Step 4: Additional delay to ensure UI is stable
+      console.log('🎬 Step 4: Final stabilization delay...');
+      await this.sleep(1000);
+
+      // Step 5: Click play button
+      console.log('🎬 Step 5: Clicking play button...');
       await this.clickControl('play', 'play');
+
+      // Step 6: Verify playback started (optional verification)
+      console.log('🎬 Step 6: Verifying playback...');
+      await this.sleep(2000); // Wait a bit for play to take effect
+
+      const nowPlaying = await this.isVideoPlaying();
+      if (nowPlaying) {
+        console.log('✅ Playback successfully started');
+      } else {
+        console.log('⚠️ Play click completed but video may not be playing yet');
+      }
 
     } catch (error) {
       console.error('❌ Error starting playback:', error.message);
