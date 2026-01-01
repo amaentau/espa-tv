@@ -47,6 +47,11 @@ class HDMIMonitor {
    * @returns {Promise<{connected: boolean, method: string, confidence: number}>}
    */
   async _performHDMICheck() {
+    // Check if we're on a platform that supports HDMI detection
+    const isLinux = process.platform === 'linux';
+    const isRaspberryPi = isLinux && fs.existsSync('/proc/cpuinfo') &&
+      fs.readFileSync('/proc/cpuinfo', 'utf8').includes('Raspberry Pi');
+
     const methods = [
       { name: 'drm_hdmi_status', fn: this._checkDRMHDMIPorts.bind(this), weight: 1.0 },
       { name: 'drm_connector_status', fn: this._checkDRMConnectors.bind(this), weight: 0.9 },
@@ -85,12 +90,33 @@ class HDMIMonitor {
           cached: true
         };
       }
-      // Ultimate fallback: assume connected (safer for provisioning logic)
-      return {
-        connected: true,
-        method: 'fallback_assume_connected',
-        confidence: 0.1
-      };
+
+      // Platform-specific fallback logic
+      if (isRaspberryPi) {
+        // On Raspberry Pi, if no methods work, assume disconnected (safer for provisioning)
+        console.debug('No HDMI detection methods available on Raspberry Pi, assuming disconnected');
+        return {
+          connected: false,
+          method: 'fallback_rpi_assume_disconnected',
+          confidence: 0.4
+        };
+      } else if (isLinux) {
+        // On other Linux systems, assume connected (likely desktop environment)
+        console.debug('No HDMI detection methods available on Linux, assuming connected');
+        return {
+          connected: true,
+          method: 'fallback_linux_assume_connected',
+          confidence: 0.5
+        };
+      } else {
+        // On Windows/macOS, assume connected (development environment)
+        console.debug('Non-Linux platform detected, assuming HDMI connected for development');
+        return {
+          connected: true,
+          method: 'fallback_nonlinux_assume_connected',
+          confidence: 0.6
+        };
+      }
     }
 
     // Weighted voting system
@@ -194,9 +220,22 @@ class HDMIMonitor {
    */
   async _checkCECPresence() {
     try {
+      // CEC is only relevant on Linux systems
+      if (process.platform !== 'linux') {
+        return null; // Cannot determine CEC status on non-Linux platforms
+      }
+
       const cecPath = '/dev/cec0';
-      const cecInfo = fs.existsSync(cecPath) && fs.statSync(cecPath);
-      return cecInfo ? true : false;
+      if (fs.existsSync(cecPath)) {
+        const cecInfo = fs.statSync(cecPath);
+        return cecInfo ? true : false;
+      }
+
+      // On Linux systems, absence of CEC device could mean:
+      // 1. HDMI not connected, or
+      // 2. CEC not supported/enabled
+      // We return null to be conservative
+      return null;
     } catch (error) {
       return null;
     }
@@ -208,6 +247,21 @@ class HDMIMonitor {
    */
   async _checkVcgencmdDisplay() {
     try {
+      // Only run vcgencmd on Raspberry Pi
+      if (process.platform !== 'linux') {
+        return null;
+      }
+
+      // Check if this is a Raspberry Pi
+      if (fs.existsSync('/proc/cpuinfo')) {
+        const cpuinfo = fs.readFileSync('/proc/cpuinfo', 'utf8');
+        if (!cpuinfo.includes('Raspberry Pi')) {
+          return null; // Not a Raspberry Pi
+        }
+      } else {
+        return null; // Can't determine if Raspberry Pi
+      }
+
       const { exec } = require('child_process');
       const util = require('util');
       const execAsync = util.promisify(exec);

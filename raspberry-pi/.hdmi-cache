@@ -1,1 +1,1 @@
-{"timestamp":1767292204623,"result":{"connected":false,"method":"cec_presence","confidence":1}}
+{"timestamp":1767296178623,"result":{"connected":true,"method":"cache_fallback","confidence":0.3,"cached":true}}
