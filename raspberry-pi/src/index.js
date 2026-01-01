@@ -737,6 +737,19 @@ ID: ${id}
           { reason: this.provisioningDecision.reason, hdmiStatus: this.provisioningDecision.hdmiStatus }
         );
 
+        // Launch browser with provisioning guide for HDMI display
+        try {
+          await this.launchBrowser();
+          const guideUrl = `http://127.0.0.1:${this.port}/provisioning-guide.html`;
+          console.log(`📺 Showing provisioning guide on HDMI: ${guideUrl}`);
+          await this.page.goto(guideUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+          // Start HDMI monitoring for re-provisioning updates
+          this.startHDMIMonitoring();
+        } catch (e) {
+          console.error('⚠️ Failed to show provisioning guide:', e.message);
+        }
+
         const provisioning = new ProvisioningManager(this.app, this.port, this.stateManager);
         await provisioning.start();
         // Server listen is handled in start()
@@ -857,6 +870,9 @@ ID: ${id}
         }
       }
 
+      // Start HDMI monitoring for potential re-provisioning triggers
+      this.startHDMIMonitoring();
+
       console.log(`✅ Espa-TV Player ready. Access at http://localhost:${this.port}`);
     } catch (error) {
       console.error('❌ Initialization failed:', error.message);
@@ -874,6 +890,141 @@ ID: ${id}
       } catch (e) {
         // Ignore errors if page is navigating
       }
+    }
+  }
+
+  /**
+   * Start HDMI monitoring for provisioning guide updates or disconnection detection
+   */
+  startHDMIMonitoring() {
+    if (this.hdmiMonitorInterval) {
+      clearInterval(this.hdmiMonitorInterval);
+    }
+
+    // Track last known HDMI state
+    this.lastHdmiConnected = null;
+
+    console.log('👀 Starting HDMI monitoring');
+
+    // Check HDMI status every 2 seconds
+    this.hdmiMonitorInterval = setInterval(async () => {
+      try {
+        const hdmiStatus = await this.hdmiMonitor.checkHDMI();
+
+        // Check if HDMI state changed
+        if (this.lastHdmiConnected !== null && this.lastHdmiConnected !== hdmiStatus.connected) {
+          console.log(`🖥️ HDMI state changed: ${this.lastHdmiConnected ? 'connected' : 'disconnected'} → ${hdmiStatus.connected ? 'connected' : 'disconnected'}`);
+
+          if (!hdmiStatus.connected && hdmiStatus.confidence > 0.5) {
+            // HDMI was disconnected - this might trigger re-provisioning
+            console.log('⚠️ HDMI disconnected during operation - checking if re-provisioning needed');
+            await this.handleHDMIDisconnection();
+          }
+        }
+
+        this.lastHdmiConnected = hdmiStatus.connected;
+
+        // Update provisioning guide if in provisioning mode
+        if (this.provisioningDecision && this.provisioningDecision.needsProvisioning) {
+          await this.updateProvisioningGuide(hdmiStatus);
+        }
+      } catch (error) {
+        console.debug('HDMI monitoring error:', error.message);
+      }
+    }, 2000);
+  }
+
+  /**
+   * Handle HDMI disconnection during normal operation
+   */
+  async handleHDMIDisconnection() {
+    // Check if headless override is enabled
+    if (this.hdmiMonitor.isHeadlessOverrideEnabled()) {
+      console.log('📱 Headless override enabled - continuing normal operation despite HDMI disconnection');
+      return;
+    }
+
+    // Check current provisioning requirements
+    const currentDecision = await this._determineProvisioningRequirements();
+
+    if (currentDecision.needsProvisioning && currentDecision.reason === 'hdmi_disconnected_absolute') {
+      console.log('⚠️ HDMI disconnection requires re-provisioning - entering provisioning mode');
+
+      // Stop current stream and browser
+      if (this.browser) {
+        console.log('🛑 Stopping current browser session for re-provisioning');
+        await this.browser.close();
+        this.browser = null;
+        this.page = null;
+      }
+
+      // Clear HDMI monitoring
+      if (this.hdmiMonitorInterval) {
+        clearInterval(this.hdmiMonitorInterval);
+        this.hdmiMonitorInterval = null;
+      }
+
+      // Trigger re-provisioning by restarting the application
+      console.log('🔄 Restarting application in provisioning mode...');
+      process.env.FORCE_PROVISIONING = 'true';
+      process.exit(0);
+    } else {
+      console.log('ℹ️ HDMI disconnected but not triggering re-provisioning (reason:', currentDecision.reason, ')');
+    }
+  }
+
+  /**
+   * Update provisioning guide with current HDMI status
+   */
+  async updateProvisioningGuide(hdmiStatus) {
+    if (!this.page) return;
+
+    try {
+      await this.page.evaluate((status) => {
+        // Update status display
+        const statusValue = document.querySelector('.status-value.blink');
+        if (statusValue) {
+          if (status.connected) {
+            statusValue.textContent = 'HDMI yhdistetty ✓';
+            statusValue.className = 'status-value';
+            statusValue.style.color = '#00ff00';
+          } else {
+            statusValue.textContent = 'Odotetaan yhteyttä...';
+            statusValue.className = 'status-value blink';
+            statusValue.style.color = '';
+          }
+        }
+
+        // Add visual indicator for HDMI connection
+        let hdmiIndicator = document.querySelector('.hdmi-indicator');
+        if (!hdmiIndicator) {
+          hdmiIndicator = document.createElement('div');
+          hdmiIndicator.className = 'hdmi-indicator';
+          hdmiIndicator.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            backdrop-filter: blur(5px);
+          `;
+          document.body.appendChild(hdmiIndicator);
+        }
+
+        if (status.connected) {
+          hdmiIndicator.innerHTML = '🖥️ HDMI: Yhdistetty';
+          hdmiIndicator.style.background = 'rgba(0, 128, 0, 0.8)';
+        } else {
+          hdmiIndicator.innerHTML = '📺 HDMI: Ei yhdistettyä';
+          hdmiIndicator.style.background = 'rgba(255, 165, 0, 0.8)';
+        }
+      }, hdmiStatus);
+    } catch (error) {
+      // Page might be navigating or not ready
+      console.debug('Failed to update provisioning guide:', error.message);
     }
   }
 

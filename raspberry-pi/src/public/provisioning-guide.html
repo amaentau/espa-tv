@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESPA TV - Käyttöönotto-opas</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 800px;
+            padding: 40px;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            margin: 20px;
+        }
+
+        .logo {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 30px;
+            background: linear-gradient(135deg, #0071e3 0%, #00c6ff 100%);
+            border-radius: 25px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 48px;
+            font-weight: bold;
+            box-shadow: 0 0 40px rgba(0, 113, 227, 0.4);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            color: rgba(255, 255, 255, 0.8);
+            margin-bottom: 40px;
+        }
+
+        .steps {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+            margin: 40px 0;
+        }
+
+        .step {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 25px;
+            border-left: 5px solid #0071e3;
+            text-align: left;
+            transition: all 0.3s ease;
+        }
+
+        .step:hover {
+            background: rgba(255, 255, 255, 0.15);
+            transform: translateY(-2px);
+        }
+
+        .step-number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            background: #0071e3;
+            color: white;
+            border-radius: 50%;
+            font-weight: bold;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+
+        .step-content h3 {
+            margin: 0 0 10px 0;
+            font-size: 1.3rem;
+        }
+
+        .step-content p {
+            margin: 0;
+            color: rgba(255, 255, 255, 0.9);
+            line-height: 1.5;
+        }
+
+        .highlight {
+            background: rgba(0, 113, 227, 0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+        }
+
+        .wifi-info {
+            background: rgba(0, 255, 0, 0.1);
+            border: 2px solid rgba(0, 255, 0, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .wifi-info h3 {
+            color: #00ff00;
+            margin-top: 0;
+        }
+
+        .status {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            backdrop-filter: blur(5px);
+        }
+
+        .status-item {
+            margin: 5px 0;
+        }
+
+        .status-label {
+            font-weight: bold;
+            color: #0071e3;
+        }
+
+        .status-value {
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .blink {
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0.3; }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+                margin: 10px;
+            }
+
+            h1 {
+                font-size: 2rem;
+            }
+
+            .steps {
+                gap: 20px;
+            }
+
+            .step {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">E</div>
+        <h1>ESPA TV Käyttöönotto</h1>
+        <p class="subtitle">Seuraa näitä ohjeita laitteen määrittämiseksi</p>
+
+        <div class="steps">
+            <div class="step">
+                <div class="step-content">
+                    <h3><span class="step-number">1</span>Yhdistä WiFi-verkkoon</span></h3>
+                    <p>Ota puhelin tai tietokone ja yhdistä WiFi-verkkoon:</p>
+                    <div class="wifi-info">
+                        <h3>📶 ESPA WiFi-verkko</h3>
+                        <p><strong>Verkon nimi:</strong> <span class="highlight">EspaSetup</span></p>
+                        <p><strong>Salasana:</strong> <span class="highlight">espa12345</span></p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-content">
+                    <h3><span class="step-number">2</span>Avaa selain</span></h3>
+                    <p>Avaa verkkoselain ja siirry osoitteeseen:</p>
+                    <p><strong>Osoite:</strong> <span class="highlight">http://10.42.0.1</span></p>
+                    <p>Tämä avaa ESPA TV:n asetussivun.</p>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-content">
+                    <h3><span class="step-number">3</span>Määritä laite</span></h3>
+                    <p>Täytä seuraavat tiedot asetussivulla:</p>
+                    <ul style="color: rgba(255, 255, 255, 0.9); text-align: left; margin: 10px 0;">
+                        <li><strong>Veo-tili:</strong> Sähköposti ja salasana</li>
+                        <li><strong>WiFi-verkot:</strong> Kotiverkon tiedot</li>
+                        <li><strong>Laitteen nimi:</strong> Esim. "Olohuone"</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-content">
+                    <h3><span class="step-number">4</span>Tallenna ja käynnistä uudelleen</span></h3>
+                    <p>Klikkaa "Tallenna ja käynnistä uudelleen". Laite:</p>
+                    <ul style="color: rgba(255, 255, 255, 0.9); text-align: left; margin: 10px 0;">
+                        <li>Yhdistää määritettyyn WiFi-verkkoon</li>
+                        <li>Käynnistyy normaalitilaan</li>
+                        <li>Aloittaa streamauksen</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-top: 30px; padding: 20px; background: rgba(255, 255, 255, 0.1); border-radius: 10px;">
+            <p style="margin: 0; font-size: 1.1rem;">
+                <strong>💡 Vinkki:</strong> Tämä näyttö päivittyy automaattisesti. Jos kohtaat ongelmia, katso lisätietoja osoitteesta <span class="highlight">http://10.42.0.1</span>
+            </p>
+        </div>
+    </div>
+
+    <div class="status">
+        <div class="status-item">
+            <span class="status-label">Tila:</span>
+            <span class="status-value blink">Odotetaan yhteyttä...</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">IP:</span>
+            <span class="status-value">10.42.0.1:3000</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">Hotspot:</span>
+            <span class="status-value">EspaSetup</span>
+        </div>
+    </div>
+
+    <script>
+        // Update status dynamically
+        let connectionAttempts = 0;
+        const maxAttempts = 30; // 30 seconds
+
+        async function checkConnection() {
+            try {
+                const response = await fetch('/provisioning/current-config', {
+                    method: 'GET',
+                    headers: { 'Cache-Control': 'no-cache' }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    updateStatus('Hotspot aktiivinen', 'connected');
+                    connectionAttempts = 0;
+                } else {
+                    throw new Error('Not connected');
+                }
+            } catch (error) {
+                connectionAttempts++;
+                updateStatus('Odotetaan yhteyttä...', 'connecting');
+
+                if (connectionAttempts >= maxAttempts) {
+                    updateStatus('Yhteys epäonnistui', 'error');
+                }
+            }
+        }
+
+        function updateStatus(message, state) {
+            const statusValue = document.querySelector('.status-value.blink');
+            if (statusValue) {
+                statusValue.textContent = message;
+                statusValue.className = `status-value ${state === 'connecting' ? 'blink' : ''}`;
+            }
+        }
+
+        // Check connection every 1 second
+        setInterval(checkConnection, 1000);
+        checkConnection(); // Initial check
+
+        // Make the page responsive to window size changes (for different displays)
+        function updateLayout() {
+            const container = document.querySelector('.container');
+            const isSmallScreen = window.innerWidth < 768;
+
+            if (container) {
+                container.style.maxWidth = isSmallScreen ? '90%' : '800px';
+            }
+        }
+
+        window.addEventListener('resize', updateLayout);
+        updateLayout();
+    </script>
+</body>
+</html>
