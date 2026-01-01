@@ -737,17 +737,25 @@ ID: ${id}
           { reason: this.provisioningDecision.reason, hdmiStatus: this.provisioningDecision.hdmiStatus }
         );
 
-        // Launch browser with provisioning guide for HDMI display
-        try {
-          await this.launchBrowser();
-          const guideUrl = `http://127.0.0.1:${this.port}/provisioning-guide.html`;
-          console.log(`📺 Showing provisioning guide on HDMI: ${guideUrl}`);
-          await this.page.goto(guideUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        // Start HDMI monitoring first to detect when display becomes available
+        this.startHDMIMonitoring();
 
-          // Start HDMI monitoring for re-provisioning updates
-          this.startHDMIMonitoring();
-        } catch (e) {
-          console.error('⚠️ Failed to show provisioning guide:', e.message);
+        // Check if HDMI is currently connected
+        const currentHdmiStatus = await this.hdmiMonitor.checkHDMI();
+
+        if (currentHdmiStatus.connected && currentHdmiStatus.confidence > 0.5) {
+          // HDMI is connected, launch browser immediately
+          console.log('🖥️ HDMI is connected at provisioning start - launching browser');
+          await this.launchBrowserForProvisioning();
+        } else {
+          // HDMI not connected, wait for it or launch anyway for headless development
+          console.log('📺 HDMI not connected at provisioning start - waiting for connection or launching anyway');
+          // Still launch browser in case we're in a development environment
+          try {
+            await this.launchBrowserForProvisioning();
+          } catch (e) {
+            console.log('ℹ️ Browser launch failed (expected if no display) - will retry when HDMI connects');
+          }
         }
 
         const provisioning = new ProvisioningManager(this.app, this.port, this.stateManager);
@@ -919,6 +927,10 @@ ID: ${id}
             // HDMI was disconnected - this might trigger re-provisioning
             console.log('⚠️ HDMI disconnected during operation - checking if re-provisioning needed');
             await this.handleHDMIDisconnection();
+          } else if (hdmiStatus.connected && hdmiStatus.confidence > 0.5) {
+            // HDMI was connected - ensure display is working in provisioning mode
+            console.log('✅ HDMI connected during operation - ensuring display visibility');
+            await this.handleHDMIconnection();
           }
         }
 
@@ -932,6 +944,101 @@ ID: ${id}
         console.debug('HDMI monitoring error:', error.message);
       }
     }, 2000);
+  }
+
+  /**
+   * Launch browser specifically for provisioning mode
+   */
+  async launchBrowserForProvisioning() {
+    try {
+      await this.launchBrowser();
+      const guideUrl = `http://127.0.0.1:${this.port}/provisioning-guide.html`;
+      console.log(`📺 Showing provisioning guide: ${guideUrl}`);
+      await this.page.goto(guideUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+      // Get current HDMI status and update the guide
+      const hdmiStatus = await this.hdmiMonitor.checkHDMI();
+      await this.updateProvisioningGuide(hdmiStatus);
+
+      console.log('✅ Provisioning browser launched successfully');
+    } catch (e) {
+      console.error('⚠️ Failed to launch provisioning browser:', e.message);
+      throw e;
+    }
+  }
+
+  /**
+   * Handle HDMI connection during provisioning mode
+   */
+  async handleHDMIconnection() {
+    if (!this.provisioningDecision || !this.provisioningDecision.needsProvisioning) {
+      return; // Only relevant during provisioning
+    }
+
+    console.log('🖥️ HDMI connected during provisioning - ensuring display visibility');
+
+    try {
+      // If browser is not launched yet, launch it now
+      if (!this.browser || !this.page) {
+        console.log('🚀 Browser not launched yet, launching now that HDMI is connected');
+        await this.launchBrowserForProvisioning();
+      } else {
+        // Browser is already launched, ensure it's visible on the new display
+        console.log('🔄 Browser already launched, refreshing to ensure visibility on new display');
+
+        // Method 1: Force page refresh
+        await this.page.reload({ waitUntil: 'domcontentloaded', timeout: 10000 });
+
+        // Method 2: Try to bring browser window to front
+        const pages = await this.browser.pages();
+        if (pages.length > 0) {
+          await pages[0].bringToFront();
+        }
+      }
+
+      // Method 3: Update display configuration if running on Linux
+      if (process.platform === 'linux') {
+        await this.updateDisplayConfiguration();
+      }
+
+      console.log('✅ Display visibility actions completed - provisioning guide should now be visible');
+    } catch (error) {
+      console.warn('⚠️ Failed to ensure display visibility:', error.message);
+    }
+  }
+
+  /**
+   * Update display configuration when HDMI connects
+   */
+  async updateDisplayConfiguration() {
+    try {
+      const { exec } = require('child_process');
+      const util = require('util');
+      const execAsync = util.promisify(exec);
+
+      console.log('🔧 Updating display configuration for HDMI connection');
+
+      // Try xrandr to detect and configure displays
+      try {
+        const { stdout } = await execAsync('xrandr --auto 2>/dev/null || true');
+        console.log('✅ Display auto-configuration attempted');
+      } catch (error) {
+        console.debug('xrandr not available or failed');
+      }
+
+      // Force Chromium to redraw (send a window manager hint)
+      if (this.page) {
+        await this.page.evaluate(() => {
+          // Force a repaint by triggering a style recalculation
+          document.body.style.display = 'none';
+          setTimeout(() => {
+            document.body.style.display = '';
+          }, 100);
+        });
+      }
+    } catch (error) {
+      console.debug('Display configuration update failed:', error.message);
+    }
   }
 
   /**
