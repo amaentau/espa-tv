@@ -184,7 +184,6 @@ class EspaTvPlayer {
       waitForRetry: decision.waitForRetry || false
     };
   }
-  }
 
   tryLoadConfig() {
     const configDir = path.join(__dirname, '..');
