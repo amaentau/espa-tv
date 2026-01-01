@@ -337,7 +337,7 @@
                 const res = await fetch('/provisioning/current-config');
                 if (res.ok) {
                     const data = await res.json();
-                    
+
                     if (data.email) document.getElementById('email').value = data.email;
                     if (data.password) document.getElementById('password').value = data.password;
                     if (data.friendlyName) document.getElementById('friendlyName').value = data.friendlyName;
@@ -355,9 +355,44 @@
                             container.style.display = 'block';
                         }
                     }
+
+                    // Show session information if resuming an interrupted session
+                    if (data.sessionInfo) {
+                        showSessionInfo(data.sessionInfo);
+                    }
                 }
             } catch (e) {
                 console.warn('Failed to fetch current config', e);
+            }
+        }
+
+        // Show information about current provisioning session
+        function showSessionInfo(sessionInfo) {
+            const infoDiv = document.createElement('div');
+            infoDiv.style.cssText = `
+                background: #e8f4fd;
+                border: 1px solid #0071e3;
+                border-radius: 6px;
+                padding: 12px;
+                margin-bottom: 20px;
+                font-size: 14px;
+            `;
+
+            const startTime = new Date(sessionInfo.startTime);
+            const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000 / 60);
+
+            infoDiv.innerHTML = `
+                <strong>📋 Session Information</strong><br>
+                Session ID: <code>${sessionInfo.sessionId}</code><br>
+                Started: ${startTime.toLocaleString()}<br>
+                Elapsed: ${elapsed} minutes<br>
+                Reason: ${sessionInfo.reason}<br>
+                <em style="color: #666;">Previous configuration may exist - review and update as needed.</em>
+            `;
+
+            const container = document.querySelector('.container');
+            if (container && container.firstChild) {
+                container.insertBefore(infoDiv, container.firstChild.nextSibling);
             }
         }
 

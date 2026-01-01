@@ -10,6 +10,8 @@ const { exec } = require('child_process');
 const ProvisioningManager = require('./provisioning');
 const CloudService = require('./cloud-service');
 const NetworkUtils = require('./network-utils');
+const HDMIMonitor = require('./hdmi-monitor');
+const ProvisioningStateManager = require('./provisioning-state');
 require('dotenv').config();
 
 class EspaTvPlayer {
@@ -25,28 +27,22 @@ class EspaTvPlayer {
     // Runtime environment helpers
     this.runtimeEnvironment = process.env.RUNTIME_ENV || (this.detectWSL() ? 'wsl' : 'raspberry');
 
+    // Initialize HDMI monitor and state manager
+    this.hdmiMonitor = new HDMIMonitor();
+    this.stateManager = new ProvisioningStateManager();
+
     // Load configuration
     this.config = this.tryLoadConfig();
 
     // Load credentials
     this.credentials = this.loadCredentials();
 
-    // Check if provisioning is needed (missing core config OR missing credentials OR forced)
-    this.needsProvisioning = !this.config?.azure?.bbsUrl || !this.credentials || process.env.FORCE_PROVISIONING === 'true';
-
-    if (this.needsProvisioning) {
-      if (process.env.FORCE_PROVISIONING === 'true') {
-        console.log('⚠️ FORCE_PROVISIONING detected (reboot loop) - Entering Provisioning Mode');
-      } else {
-        console.log('⚠️ Missing configuration or credentials - Provisioning Mode required');
-      }
-      if (!this.config) this.config = {}; // Prevent crashes
-    }
+    // Determine provisioning requirements with HDMI awareness
+    // Note: This will be awaited in the async initialize() method
+    this.provisioningDecision = null; // Will be set in initialize()
 
     this.displayConfig = this.config.display || {};
-    if (!this.needsProvisioning) {
-      this.logDisplaySummary();
-    }
+    // Display summary will be logged in initialize() after provisioning decision
 
     // Device configuration (allow configuration file to drive the default ID)
     this.deviceId = this.getPersistentDeviceId();
@@ -69,6 +65,125 @@ class EspaTvPlayer {
     // Initialize cloud service
     this.cloudService = new CloudService(this.config, this.deviceId);
     this.cloudCoordinates = null;
+  }
+
+  /**
+   * Determine if provisioning is required based on multiple factors
+   * @returns {object} Provisioning decision with detailed reasoning
+   */
+  async _determineProvisioningRequirements() {
+    console.log('🔍 Determining provisioning requirements...');
+
+    // Check recovery state first
+    const recoveryState = this.stateManager.checkRecoveryState();
+    if (recoveryState.needsRecovery) {
+      console.log(`🔄 Recovery state detected: ${recoveryState.reason}`);
+      this.stateManager.recordProvisioningTrigger('recovery_required', recoveryState);
+      return {
+        needsProvisioning: true,
+        reason: recoveryState.reason,
+        confidence: 0.9,
+        recovery: recoveryState
+      };
+    }
+
+    // Force provisioning via environment variable
+    if (process.env.FORCE_PROVISIONING === 'true') {
+      console.log('⚠️ FORCE_PROVISIONING detected - Entering Provisioning Mode');
+      this.stateManager.recordProvisioningTrigger('force_provisioning_env');
+      return {
+        needsProvisioning: true,
+        reason: 'force_provisioning_env',
+        confidence: 1.0
+      };
+    }
+
+    // Check for valid configuration and credentials
+    const hasConfig = !!(this.config?.azure?.bbsUrl);
+    const hasCredentials = !!this.credentials;
+
+    console.log(`📋 Configuration check: config=${hasConfig}, credentials=${hasCredentials}`);
+
+    // If both are missing, always provision
+    if (!hasConfig && !hasCredentials) {
+      console.log('⚠️ Missing both configuration and credentials - Provisioning Mode required');
+      this.stateManager.recordProvisioningTrigger('missing_config_and_credentials');
+      return {
+        needsProvisioning: true,
+        reason: 'missing_config_and_credentials',
+        confidence: 1.0
+      };
+    }
+
+    // If config is missing, always provision
+    if (!hasConfig) {
+      console.log('⚠️ Missing configuration - Provisioning Mode required');
+      this.stateManager.recordProvisioningTrigger('missing_config');
+      return {
+        needsProvisioning: true,
+        reason: 'missing_config',
+        confidence: 1.0
+      };
+    }
+
+    // If credentials are missing, always provision
+    if (!hasCredentials) {
+      console.log('⚠️ Missing credentials - Provisioning Mode required');
+      this.stateManager.recordProvisioningTrigger('missing_credentials');
+      return {
+        needsProvisioning: true,
+        reason: 'missing_credentials',
+        confidence: 1.0
+      };
+    }
+
+    // Both config and credentials exist - check HDMI status
+    console.log('✅ Configuration and credentials found - checking HDMI status...');
+
+    // Check if headless override is enabled
+    if (this.hdmiMonitor.isHeadlessOverrideEnabled()) {
+      console.log('📱 Headless override enabled - proceeding with normal operation');
+      return {
+        needsProvisioning: false,
+        reason: 'headless_override_enabled',
+        confidence: 1.0
+      };
+    }
+
+    // Check HDMI connectivity
+    const hdmiStatus = await this.hdmiMonitor.checkHDMI();
+    console.log(`🖥️ HDMI status: ${hdmiStatus.connected ? 'connected' : 'disconnected'} (${hdmiStatus.method}, ${(hdmiStatus.confidence * 100).toFixed(1)}% confidence)`);
+
+    // Use state manager to make final decision
+    const decision = this.stateManager.shouldTriggerProvisioning({
+      hasConfig,
+      hasCredentials,
+      hdmiConnected: hdmiStatus.connected,
+      forceProvisioning: false,
+      headlessOverride: this.hdmiMonitor.isHeadlessOverrideEnabled()
+    });
+
+    if (decision.shouldProvision) {
+      console.log(`⚠️ Provisioning required: ${decision.reason} (confidence: ${(decision.confidence * 100).toFixed(1)}%)`);
+      this.stateManager.recordProvisioningTrigger('hdmi_based_provisioning', {
+        hdmiStatus,
+        decision
+      });
+    } else {
+      console.log(`✅ Normal operation: ${decision.reason} (confidence: ${(decision.confidence * 100).toFixed(1)}%)`);
+      if (decision.waitForRetry) {
+        console.log('⏳ HDMI disconnected - waiting for potential reconnection before triggering provisioning...');
+      }
+    }
+
+    return {
+      needsProvisioning: decision.shouldProvision,
+      reason: decision.reason,
+      confidence: decision.confidence,
+      hdmiStatus,
+      waitForRetry: decision.waitForRetry || false
+    };
+  }
   }
 
   tryLoadConfig() {
@@ -554,12 +669,28 @@ ID: ${id}
   async initialize() {
     console.log('Initializing Espa-TV Player...');
 
+    // Check for provisioning recovery state first
+    const recoveryState = this.stateManager.checkRecoveryState();
+    if (recoveryState.needsRecovery) {
+      console.log(`🔄 Detected provisioning recovery state: ${recoveryState.reason}`);
+      // Force provisioning to allow user to complete interrupted session
+      process.env.FORCE_PROVISIONING = 'true';
+    }
+
+    // Determine provisioning requirements with HDMI awareness
+    this.provisioningDecision = await this._determineProvisioningRequirements();
+
+    // Log display summary if not provisioning
+    if (!this.provisioningDecision.needsProvisioning) {
+      this.logDisplaySummary();
+    }
+
     try {
       // 0. Network sanity: only clean up hotspot/captive-portal if it's actually active.
       // Avoid running disruptive NetworkManager operations on every boot.
-      if (!this.needsProvisioning) {
+      if (!this.provisioningDecision.needsProvisioning) {
         try {
-          const pm = new ProvisioningManager(this.app, this.port);
+          const pm = new ProvisioningManager(this.app, this.port, this.stateManager);
           // Always remove any leftover captive-portal redirect rule (safe + idempotent),
           // even if the hotspot isn't active (covers interrupted provisioning runs).
           await pm.cleanupCaptivePortalRules();
@@ -590,7 +721,7 @@ ID: ${id}
       });
 
       // 2. Launch browser ASAP to show splash screen
-      if (!this.needsProvisioning) {
+      if (!this.provisioningDecision.needsProvisioning) {
         try {
           await this.launchBrowser();
           const splashUrl = `http://127.0.0.1:${this.port}/splash.html`;
@@ -602,12 +733,41 @@ ID: ${id}
         }
       }
 
-      // Provisioning check
-      if (this.needsProvisioning) {
-        const provisioning = new ProvisioningManager(this.app, this.port);
+      // Provisioning check with HDMI awareness
+      if (this.provisioningDecision.needsProvisioning) {
+        console.log(`🚀 Entering Provisioning Mode: ${this.provisioningDecision.reason}`);
+        this.stateManager.recordProvisioningStart(
+          this.stateManager.generateSessionId(),
+          { reason: this.provisioningDecision.reason, hdmiStatus: this.provisioningDecision.hdmiStatus }
+        );
+
+        const provisioning = new ProvisioningManager(this.app, this.port, this.stateManager);
         await provisioning.start();
         // Server listen is handled in start()
         return;
+      }
+
+      // Handle HDMI wait-for-retry case
+      if (this.provisioningDecision.waitForRetry) {
+        console.log('⏳ HDMI disconnected - waiting for potential reconnection...');
+        await this.updateSplash('Odotetaan näyttöyhteyttä...');
+
+        const hdmiWaitResult = await this.hdmiMonitor.waitForHDMI(10000, 1000); // 10 second wait
+        if (!hdmiWaitResult.connected) {
+          console.log('❌ HDMI still disconnected after wait - entering provisioning mode');
+          this.stateManager.recordProvisioningTrigger('hdmi_wait_timeout', hdmiWaitResult);
+
+          this.stateManager.recordProvisioningStart(
+            this.stateManager.generateSessionId(),
+            { reason: 'hdmi_wait_timeout', hdmiWaitResult }
+          );
+
+          const provisioning = new ProvisioningManager(this.app, this.port, this.stateManager);
+          await provisioning.start();
+          return;
+        } else {
+          console.log('✅ HDMI reconnected - proceeding with normal operation');
+        }
       }
 
       await this.updateSplash('Tarkistetaan verkkoyhteyttä...');
@@ -915,6 +1075,124 @@ ID: ${id}
     // Basic health check
     this.app.get('/health', (req, res) => {
       res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    });
+
+    // HDMI and provisioning diagnostics
+    this.app.get('/diagnostics', async (req, res) => {
+      try {
+        const hdmiDiagnostics = await this.hdmiMonitor.getDiagnostics();
+        const provisioningState = this.stateManager.getState();
+        const provisioningStats = this.stateManager.getStatistics();
+
+        res.json({
+          timestamp: new Date().toISOString(),
+          hdmi: hdmiDiagnostics,
+          provisioning: {
+            currentDecision: this.provisioningDecision,
+            state: provisioningState,
+            statistics: provisioningStats
+          },
+          system: {
+            nodeVersion: process.version,
+            platform: process.platform,
+            arch: process.arch,
+            uptime: process.uptime(),
+            memory: process.memoryUsage()
+          }
+        });
+      } catch (error) {
+        res.status(500).json({
+          error: error.message,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    // Force re-provisioning (admin endpoint)
+    this.app.post('/admin/reprovision', async (req, res) => {
+      try {
+        console.log('🔄 Admin re-provisioning requested');
+
+        // Record the trigger
+        this.stateManager.recordProvisioningTrigger('admin_reprovision_request', {
+          ip: req.ip,
+          userAgent: req.get('User-Agent'),
+          reason: req.body?.reason || 'admin_request'
+        });
+
+        // Check if we're currently in a provisioning session
+        const recoveryState = this.stateManager.checkRecoveryState();
+        if (recoveryState.needsRecovery) {
+          return res.status(409).json({
+            error: 'Device is already in recovery/provisioning state',
+            recoveryState,
+            timestamp: new Date().toISOString()
+          });
+        }
+
+        // Create new provisioning session
+        const sessionId = this.stateManager.generateSessionId();
+        this.stateManager.recordProvisioningStart(sessionId, {
+          trigger: 'admin_reprovision',
+          ip: req.ip,
+          reason: req.body?.reason
+        });
+
+        // Stop current browser if running
+        if (this.browser) {
+          console.log('🛑 Stopping current browser session...');
+          await this.browser.close();
+          this.browser = null;
+          this.page = null;
+        }
+
+        // Close current server connections gracefully
+        if (this.server) {
+          console.log('🔌 Closing current server...');
+          this.server.close();
+        }
+
+        res.json({
+          success: true,
+          message: 'Re-provisioning initiated. Device will restart momentarily.',
+          sessionId,
+          timestamp: new Date().toISOString()
+        });
+
+        // Delay restart to allow response to be sent
+        setTimeout(async () => {
+          console.log('🔄 Restarting application in provisioning mode...');
+
+          // Force provisioning on next start
+          process.env.FORCE_PROVISIONING = 'true';
+
+          // Exit process - systemd will restart us
+          process.exit(0);
+        }, 2000);
+
+      } catch (error) {
+        console.error('❌ Re-provisioning request failed:', error);
+        res.status(500).json({
+          error: error.message,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    // Check HDMI status
+    this.app.get('/hdmi/status', async (req, res) => {
+      try {
+        const status = await this.hdmiMonitor.checkHDMI();
+        res.json({
+          status,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        res.status(500).json({
+          error: error.message,
+          timestamp: new Date().toISOString()
+        });
+      }
     });
 
   }

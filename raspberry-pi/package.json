@@ -19,6 +19,7 @@
     "launch": "node launch-simple.js --system-chromium",
     "launch:simple": "node src/simple-launcher.js",
     "launch:headless": "node src/simple-launcher.js --headless",
+    "test:hdmi": "node test-hdmi-provisioning.js",
     "launch:gui": "node src/simple-launcher.js --no-gui=false",
     "launch:system": "node src/simple-launcher.js --system-chromium",
     "launch:test": "node src/simple-launcher.js --test"

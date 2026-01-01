@@ -7,12 +7,14 @@ const execPromise = util.promisify(exec);
 const express = require('express');
 
 class ProvisioningManager {
-  constructor(app, port) {
+  constructor(app, port, stateManager = null) {
     this.app = app;
     this.port = port || 3000;
     this.hotspotName = 'EspaHotspot';
     this.ssid = 'EspaSetup';
     this.password = 'espa12345';
+    this.stateManager = stateManager;
+    this.sessionId = null;
   }
 
   async isHotspotActive() {
@@ -38,9 +40,15 @@ class ProvisioningManager {
   async start() {
     console.log('🚀 Starting Provisioning Mode...');
 
+    // Generate session ID if state manager is available
+    if (this.stateManager) {
+      this.sessionId = this.stateManager.generateSessionId();
+      console.log(`📋 Provisioning session: ${this.sessionId}`);
+    }
+
     // Ensure middleware is set up for parsing JSON bodies
     this.app.use(express.json());
-    
+
     // 1. Setup Routes (do this first so server can start listening)
     this.setupRoutes();
 
@@ -127,7 +135,7 @@ class ProvisioningManager {
       const configPath = path.join(__dirname, '..', 'config.json');
       const credPath = path.join(__dirname, '..', 'credentials.json');
       const idPath = path.join(__dirname, '..', '.device-id');
-      
+
       const config = loadJson(configPath);
       const creds = loadJson(credPath);
 
@@ -140,7 +148,7 @@ class ProvisioningManager {
           if (match && match[1]) deviceId = match[1];
         } catch (e) {}
       }
-      
+
       let configuredWifi = [];
       try {
         // List existing wifi connection profiles
@@ -153,13 +161,27 @@ class ProvisioningManager {
         console.warn('Failed to list wifi connections:', e.message);
       }
 
+      // Get provisioning session info if available
+      let sessionInfo = null;
+      if (this.stateManager) {
+        const state = this.stateManager.getState();
+        if (state.currentSession) {
+          sessionInfo = {
+            sessionId: state.currentSession.id,
+            startTime: new Date(state.currentSession.startTime).toISOString(),
+            reason: state.currentSession.metadata?.reason || 'unknown'
+          };
+        }
+      }
+
       res.json({
         email: creds.email || '',
         password: creds.password || '',
         deviceId: deviceId,
         friendlyName: config.friendlyName || '',
         wifiNetworks: configuredWifi,
-        headlessOk: fs.existsSync(path.join(__dirname, '..', '.headless_ok'))
+        headlessOk: fs.existsSync(path.join(__dirname, '..', '.headless_ok')),
+        sessionInfo: sessionInfo
       });
     });
 
@@ -178,7 +200,20 @@ class ProvisioningManager {
         console.log('📥 Received configuration data');
         await this.handleSave(req.body);
         res.json({ success: true });
-        
+
+        // Record successful provisioning completion
+        if (this.stateManager && this.sessionId) {
+          this.stateManager.recordProvisioningComplete('success', {
+            savedConfig: {
+              hasEmail: !!req.body.email,
+              hasPassword: !!req.body.password,
+              hasFriendlyName: !!req.body.friendlyName,
+              wifiNetworksCount: req.body.wifiNetworks?.length || 0,
+              headlessEnabled: req.body.headlessOk
+            }
+          });
+        }
+
         // Restart after a longer delay to ensure the browser received the success response
         // and the user had a moment to read it before the hotspot disappears.
         setTimeout(async () => {
@@ -189,6 +224,15 @@ class ProvisioningManager {
         }, 5000);
       } catch (e) {
         console.error('❌ Save failed:', e);
+
+        // Record failed provisioning completion
+        if (this.stateManager && this.sessionId) {
+          this.stateManager.recordProvisioningComplete('failure', {
+            error: e.message,
+            errorStack: e.stack
+          });
+        }
+
         res.status(500).json({ error: e.message });
       }
     });

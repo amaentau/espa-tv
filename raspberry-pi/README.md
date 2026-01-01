@@ -124,14 +124,45 @@ The application follows a robust startup sequence:
     *   If a file `.headless_ok` exists in the `raspberry-pi` folder, the HDMI check is skipped.
     *   This can be enabled in the Provisioning UI or by running `touch .headless_ok`.
 
-### 1. Local Provisioning Mode
-If the application enters **Provisioning Mode**:
-1. It creates a WiFi hotspot named **EspaSetup** (password: `espa12345`).
-2. Connect to this hotspot and open `http://10.42.0.1:3000` in your browser.
-3. Configure your Veo account, WiFi networks, and Device ID.
-4. Click **Save & Restart**.
+### 1. HDMI-Triggered Provisioning Mode
+The application automatically enters **Provisioning Mode** when:
 
-Note: Manual coordinate adjustment has been removed from provisioning and is now managed centrally via the Azure service.
+- **No HDMI display detected** at startup (after 10-second wait for TV sync)
+- **Missing configuration** (`config.json` or `credentials.json`)
+- **Force provisioning** via environment variable or API call
+- **Power interruption recovery** during provisioning
+
+### 2. Local Provisioning Mode
+When in Provisioning Mode:
+1. Creates WiFi hotspot **"EspaSetup"** (password: `espa12345`)
+2. Connect and visit `http://10.42.0.1:3000`
+3. Configure Veo credentials, WiFi networks, device settings
+4. **Save & Restart** - device automatically connects to configured WiFi
+
+### 3. Re-provisioning (Adding WiFi Networks)
+To add additional WiFi networks after initial setup:
+
+```bash
+# Via API (requires authentication)
+curl -X POST http://localhost:3000/admin/reprovision \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "adding_wifi_network"}'
+```
+
+Or manually:
+1. Set `FORCE_PROVISIONING=true` environment variable
+2. Restart the application
+3. Reconnect to EspaSetup hotspot
+4. Add new WiFi networks (existing ones are preserved)
+
+### 4. Headless Override
+For development/testing without HDMI:
+```bash
+touch .headless_ok  # Enable headless mode
+# or configure in provisioning UI
+```
+
+Note: Coordinate management is now handled centrally via Azure service.
 
 ### 2. Centralized Configuration
 Click coordinates for the Veo player are now fetched automatically from the Azure service at startup. This allows for remote maintenance without updating individual devices.
@@ -196,6 +227,14 @@ The application polls the **ESPA TV BBS** (Bulletin Board Service) for stream up
 | POST | `/cloud/store` | Store stream URL in Azure Table Storage |
 | GET | `/cloud/latest` | Get latest stream URL from cloud |
 | POST | `/cloud/sync` | Trigger manual cloud sync |
+
+### HDMI & Provisioning Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/diagnostics` | System diagnostics (HDMI, provisioning state) |
+| GET | `/hdmi/status` | Current HDMI connection status |
+| POST | `/admin/reprovision` | Force re-provisioning (admin only) |
 
 ### Recovery Endpoints
 
