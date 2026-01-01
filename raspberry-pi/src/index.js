@@ -9,6 +9,7 @@ const fs = require('fs');
 const { exec } = require('child_process');
 const ProvisioningManager = require('./provisioning');
 const CloudService = require('./cloud-service');
+const NetworkUtils = require('./network-utils');
 require('dotenv').config();
 
 class EspaTvPlayer {
@@ -304,41 +305,29 @@ ID: ${id}
       }
 
       // Test BBS URL with generous retries for Azure free tier cold starts
-      const maxBbsRetries = 8;
-      for (let attempt = 1; attempt <= maxBbsRetries; attempt++) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s per attempt for slow Azure cold starts
-
-        try {
-          console.log(`🌐 BBS connectivity attempt ${attempt}/${maxBbsRetries} (30s timeout)...`);
-          const response = await fetch(this.config.azure.bbsUrl, {
-            method: 'HEAD',
-            signal: controller.signal,
-            headers: {
-              'Cache-Control': 'no-cache',
-              'User-Agent': 'Espa-TV/1.0'
-            }
-          });
-          clearTimeout(timeoutId);
-
-          if (response.ok || response.status === 204 || response.status === 302) {
-            console.log(`✅ BBS connectivity confirmed (HTTP ${response.status})`);
-            return true;
-          } else {
-            console.log(`⚠️ BBS returned HTTP ${response.status} - retrying...`);
+      try {
+        const response = await NetworkUtils.httpRequest(this.config.azure.bbsUrl, {
+          method: 'HEAD',
+          headers: {
+            'Cache-Control': 'no-cache',
+            'User-Agent': 'Espa-TV/1.0'
           }
-        } catch (e) {
-          console.log(`⚠️ BBS attempt ${attempt} failed: ${e.message}`);
-          clearTimeout(timeoutId);
-        }
+        }, {
+          maxRetries: 8,
+          timeoutMs: 30000, // 30s per attempt for slow Azure cold starts
+          retryDelayMs: attempt => attempt <= 3 ? 5000 : 2000 // 5s for first 3, 2s for rest
+        });
 
-        // Network-friendly backoff: longer initial waits, shorter between retries
-        if (attempt < maxBbsRetries) {
-          // First few attempts: give time for cold start, later attempts: faster retries
-          const waitTime = attempt <= 3 ? 5000 : 2000; // 5s for first 3, 2s for rest
-          console.log(`⏳ Waiting ${waitTime/1000}s before retry (attempt ${attempt + 1})...`);
-          await this.sleep(waitTime);
+        if (response.ok || response.status === 204 || response.status === 302) {
+          console.log(`✅ BBS connectivity confirmed (HTTP ${response.status})`);
+          return true;
+        } else {
+          console.log(`⚠️ BBS returned HTTP ${response.status}`);
+          return false;
         }
+      } catch (e) {
+        console.log(`❌ BBS connectivity check failed: ${e.message}`);
+        return false;
       }
 
       console.log('❌ BBS connectivity check failed after all retries');
@@ -498,46 +487,37 @@ ID: ${id}
     }
 
     await this.updateSplash('Ilmoitetaan laite pilvipalveluun...');
-    const maxRetries = 5;
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      console.log(`📡 Announcing device ${this.deviceId} to cloud (attempt ${attempt}/${maxRetries})...`);
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
-
-        const res = await fetch(`${this.config.azure.bbsUrl}/devices/announce`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: controller.signal,
-          body: JSON.stringify({
-            deviceId: this.deviceId,
-            email: this.credentials.email,
-            friendlyName: this.config.friendlyName || `ESPA-Pi-${this.deviceId.slice(-4)}`
-          })
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (res.ok) {
-          console.log('✅ Device announcement successful');
-          return true;
-        } else {
-          const errorText = await res.text().catch(() => 'No error text');
-          console.warn(`⚠️ Device announcement failed (Status: ${res.status}): ${errorText}`);
-          // If 4xx error (except 429), maybe don't retry as it might be a client error
-          if (res.status >= 400 && res.status < 500 && res.status !== 429) {
-            break;
+    try {
+      const res = await NetworkUtils.httpRequest(`${this.config.azure.bbsUrl}/devices/announce`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deviceId: this.deviceId,
+          email: this.credentials.email,
+          friendlyName: this.config.friendlyName || `ESPA-Pi-${this.deviceId.slice(-4)}`
+        })
+      }, {
+        maxRetries: 5,
+        timeoutMs: 10000,
+        retryDelayMs: attempt => Math.min(2000 * Math.pow(2, attempt - 1), 30000), // Exponential backoff
+        shouldRetry: (response) => {
+          // Don't retry 4xx errors (except 429)
+          if (response && response.status >= 400 && response.status < 500 && response.status !== 429) {
+            return false;
           }
+          return true;
         }
-      } catch (err) {
-        console.error(`❌ Failed to announce device to cloud (attempt ${attempt}):`, err.message);
-      }
+      });
 
-      if (attempt < maxRetries) {
-        const delay = Math.min(2000 * Math.pow(2, attempt - 1), 30000);
-        console.log(`🔄 Retrying announcement in ${delay/1000}s...`);
-        await this.sleep(delay);
+      if (res.ok) {
+        console.log('✅ Device announcement successful');
+        return true;
+      } else {
+        const errorText = await res.text().catch(() => 'No error text');
+        console.warn(`⚠️ Device announcement failed (Status: ${res.status}): ${errorText}`);
       }
+    } catch (err) {
+      console.error(`❌ Failed to announce device to cloud:`, err.message);
     }
     
     console.error('❌ All announcement attempts failed');
@@ -768,6 +748,7 @@ ID: ${id}
   sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
+
 
   logDisplaySummary() {
     const modes = Array.isArray(this.displayConfig.modes) && this.displayConfig.modes.length > 0

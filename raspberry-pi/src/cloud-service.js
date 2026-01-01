@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const { TableClient } = require('@azure/data-tables');
+const NetworkUtils = require('./network-utils');
 
 /**
  * Cloud Service using Azure Table Storage
@@ -202,51 +203,42 @@ class CloudService {
     // BBS HTTP endpoint
     if (this.useBbsHttp && this.bbsUrl) {
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          const url = `${this.bbsUrl}/entries/${encodeURIComponent(targetKey)}`;
-          console.log(`📡 [BBS HTTP] Fetching entries from: ${url}`);
-          
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      try {
+        const url = `${this.bbsUrl}/entries/${encodeURIComponent(targetKey)}`;
 
-          const response = await fetch(url, { signal: controller.signal });
-          clearTimeout(timeoutId);
-          
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-          }
-          
-          const entries = await response.json();
-          
-          if (entries && entries.length > 0) {
-            // BBS returns entries sorted by timestamp (newest first)
-            const latest = entries[0];
-            console.log(`📖 [BBS HTTP] Retrieved latest stream URL for key "${targetKey}": ${latest.value1}`);
-            
-            return {
-              streamUrl: latest.value1,
-              timestamp: latest.timestamp,
-              metadata: {
-                value2: latest.value2,
-                source: 'bbs-http'
-              }
-            };
-          }
-          
-          console.log(`📖 [BBS HTTP] No entries found for key "${targetKey}"`);
-          return null;
-        } catch (error) {
-          console.error(`❌ BBS HTTP retrieve attempt ${attempt} failed:`, error.message);
-          
-          if (attempt < maxRetries) {
-            const delay = Math.min(1000 * attempt, 10000);
-            console.log(`🔄 Retrying in ${delay}ms...`);
-            await this.sleep(delay);
-          } else {
-            console.error('❌ All BBS HTTP retrieve attempts failed');
-            throw error;
-          }
+        const response = await NetworkUtils.httpRequest(url, {}, {
+          maxRetries,
+          timeoutMs: 10000,
+          retryDelayMs: attempt => Math.min(1000 * attempt, 10000)
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
+
+        const entries = await response.json();
+
+        if (entries && entries.length > 0) {
+          // BBS returns entries sorted by timestamp (newest first)
+          const latest = entries[0];
+          console.log(`📖 [BBS HTTP] Retrieved latest stream URL for key "${targetKey}": ${latest.value1}`);
+
+          return {
+            streamUrl: latest.value1,
+            timestamp: latest.timestamp,
+            metadata: {
+              value2: latest.value2,
+              source: 'bbs-http'
+            }
+          };
+        }
+
+        console.log(`📖 [BBS HTTP] No entries found for key "${targetKey}"`);
+        return null;
+      } catch (error) {
+        console.error('❌ All BBS HTTP retrieve attempts failed:', error.message);
+        throw error;
+      }
       }
     }
 
