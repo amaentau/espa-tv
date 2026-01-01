@@ -352,6 +352,7 @@ ID: ${id}
     await this.updateSplash('Odotetaan verkkoyhteyttä...');
 
     let basicConnectivityEstablished = false;
+    let recoveryInProgress = false; // Prevent multiple simultaneous recovery operations
 
     while (Date.now() - startTime < timeoutMs) {
       const elapsed = Math.round((Date.now() - startTime) / 1000);
@@ -412,42 +413,60 @@ ID: ${id}
         }
       }
 
-      // Network recovery attempts (different timing for each phase)
-      if (!basicConnectivityEstablished) {
-        // Phase 1: Basic connectivity recovery
-        if (failCount === 3) {
-          console.log('🔄 Attempting WiFi reconnection for basic connectivity...');
+      // Network recovery attempts - CONSERVATIVE to prevent pollution
+      if (!basicConnectivityEstablished && !recoveryInProgress) {
+        // Phase 1: Basic connectivity recovery - only after prolonged failure
+        if (failCount === 10) {  // Much later - after ~50 seconds of failures
+          recoveryInProgress = true;
+          console.log('🔄 Attempting gentle WiFi reconnection for basic connectivity...');
           try {
-            exec('sudo nmcli device disconnect wlan0 2>/dev/null; sleep 2; sudo nmcli device connect wlan0', (err) => {
-              if (err) {
-                console.log(`⚠️ WiFi reconnection failed: ${err.message}`);
-              } else {
-                console.log('✅ WiFi reconnection attempted');
+            // Check if wlan0 is already connected before attempting reconnection
+            exec('nmcli -t -f DEVICE,STATE device status | grep "^wlan0:connected"', (err, stdout) => {
+              if (!err && stdout.trim()) {
+                console.log('✅ wlan0 already connected, skipping reconnection');
+                recoveryInProgress = false;
+                return;
               }
+
+              // Use reapply instead of disconnect/connect cycle to avoid leaving device disconnected
+              exec('sudo nmcli device reapply wlan0 2>/dev/null || echo "Reapply failed"', (err2) => {
+                recoveryInProgress = false;
+                if (err2) {
+                  console.log(`⚠️ WiFi reapply failed: ${err2.message}`);
+                } else {
+                  console.log('✅ WiFi reapply attempted');
+                }
+              });
             });
           } catch (e) {
-            console.log('⚠️ WiFi reconnection error');
+            recoveryInProgress = false;
+            console.log('⚠️ WiFi reconnection check error');
           }
         }
 
-        if (failCount === 6) {
-          console.log('🔄 Attempting NetworkManager restart for basic connectivity...');
+        // NetworkManager reload ONLY as absolute last resort
+        if (failCount === 20) {  // Very late - after ~100 seconds
+          recoveryInProgress = true;
+          console.log('🚨 Last resort: attempting NetworkManager reload (preserves connections)...');
           try {
-            exec('sudo systemctl restart NetworkManager', (err) => {
+            // Use reload instead of restart to preserve connection state
+            exec('sudo nmcli general reload 2>/dev/null || sudo systemctl reload NetworkManager 2>/dev/null || echo "Reload not supported"', (err) => {
+              recoveryInProgress = false;
               if (err) {
-                console.log(`⚠️ NetworkManager restart failed: ${err.message}`);
+                console.log(`⚠️ NetworkManager reload failed: ${err.message}`);
               } else {
-                console.log('✅ NetworkManager restart attempted');
+                console.log('✅ NetworkManager reload attempted');
               }
             });
           } catch (e) {
-            console.log('⚠️ NetworkManager restart error');
+            recoveryInProgress = false;
+            console.log('⚠️ NetworkManager reload error');
           }
         }
 
-        // Faster backoff for basic connectivity phase
-        if (failCount > 3) {
-          currentInterval = Math.min(currentInterval * 1.2, 5000); // Max 5s for basic checks
+        // Conservative backoff for basic connectivity phase - avoid overwhelming the system
+        if (failCount > 5) {
+          currentInterval = Math.min(currentInterval * 1.1, 8000); // Max 8s, slower growth
         }
       } else {
         // Phase 2: BBS connectivity - less aggressive recovery, focus on waiting
