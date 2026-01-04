@@ -430,15 +430,20 @@ router.post('/:deviceId/commands/:command', authenticateToken, async (req, res) 
 
     console.log(`📡 Request to send IoT command: ${command} to ${deviceId} by ${email}`);
     const commandResult = await iotHubService.sendCommandToDevice(deviceId, command, payload);
-    console.log(`📤 IoT command sent successfully: ${command} to ${deviceId}, messageId: ${commandResult.messageId}`);
+    
+    const isDirectMethod = !!commandResult.methodStatus;
+    console.log(`📤 IoT command processed: ${command} to ${deviceId}. Mode: ${isDirectMethod ? 'DirectMethod' : 'C2D'}`);
 
     return res.json({
       ok: true,
       deviceId: deviceId,
       command: command,
       payload: payload,
-      messageId: commandResult.messageId,
-      sent: true
+      messageId: commandResult.messageId || `direct-${Date.now()}`,
+      methodStatus: commandResult.methodStatus,
+      methodPayload: commandResult.payload,
+      sent: true,
+      mode: isDirectMethod ? 'direct' : 'c2d'
     });
   } catch (err) {
     console.error(`❌ POST /devices/${req.params.deviceId}/commands/${req.params.command} error:`, err);

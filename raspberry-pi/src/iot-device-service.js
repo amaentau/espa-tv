@@ -5,14 +5,15 @@ const { Mqtt } = require('azure-iot-device-mqtt');
 
 /**
  * IoT Hub Device Service for Raspberry Pi
- * Handles cloud-to-device commands from BBS/IoT Hub
+ * Handles cloud-to-device commands from BBS/IoT Hub using Direct Methods (primary)
+ * and Cloud-to-Device messages (fallback).
  */
 class IoTDeviceService {
   constructor(deviceId, hubName = null, sasToken = null, connectionString = null) {
     this.deviceId = deviceId;
     this.hubName = hubName;
     this.sasToken = sasToken;
-    this.connectionString = connectionString; // Fallback for backward compatibility
+    this.connectionString = connectionString;
     this.client = null;
     this.isConnected = false;
     this.onCommandCallback = null;
@@ -35,10 +36,8 @@ class IoTDeviceService {
       console.log('🔗 Connecting to IoT Hub...');
 
       if (this.connectionString) {
-        // Backward compatibility: use full connection string
         this.client = Client.fromConnectionString(this.connectionString, Mqtt);
       } else {
-        // New secure method: use hub name + SAS token
         const connectionString = `HostName=${this.hubName}.azure-devices.net;DeviceId=${this.deviceId};SharedAccessSignature=${this.sasToken}`;
         this.client = Client.fromConnectionString(connectionString, Mqtt);
       }
@@ -59,12 +58,20 @@ class IoTDeviceService {
         this.isConnected = false;
       });
 
-      // Set up cloud-to-device message handler
+      // 1. Set up Direct Method handlers (Primary for low latency)
+      // We catch all method calls and route them via our handler
+      this.client.onDeviceMethod('play', (req, res) => this._onDirectMethod('play', req, res));
+      this.client.onDeviceMethod('pause', (req, res) => this._onDirectMethod('pause', req, res));
+      this.client.onDeviceMethod('fullscreen', (req, res) => this._onDirectMethod('fullscreen', req, res));
+      this.client.onDeviceMethod('restart', (req, res) => this._onDirectMethod('restart', req, res));
+      this.client.onDeviceMethod('status', (req, res) => this._onDirectMethod('status', req, res));
+
+      // 2. Set up cloud-to-device message handler (Fallback)
       this.client.on('message', this._handleCloudMessage.bind(this));
 
       // Connect
       await this.client.open();
-      console.log('🎯 IoT Hub device ready to receive commands');
+      console.log('🎯 IoT Hub device ready (Direct Methods + C2D Fallback)');
       return true;
 
     } catch (error) {
@@ -75,22 +82,47 @@ class IoTDeviceService {
   }
 
   /**
-   * Disconnect from IoT Hub
+   * Universal Direct Method Handler
    */
-  async disconnect() {
-    if (this.client && this.isConnected) {
-      try {
-        await this.client.close();
-        console.log('👋 Disconnected from IoT Hub');
-      } catch (error) {
-        console.error('❌ Error disconnecting from IoT Hub:', error.message);
-      }
+  async _onDirectMethod(methodName, request, response) {
+    console.log(`⚡ Direct Method received: ${methodName}`);
+    this.logDebug(`📦 Payload:`, request.payload);
+
+    this._addToHistory({
+      timestamp: new Date().toISOString(),
+      command: methodName,
+      payload: request.payload,
+      source: 'direct-method'
+    });
+
+    if (!this.onCommandCallback) {
+      console.error('❌ No command callback registered');
+      response.send(501, { error: 'No command handler registered on device' }, (err) => {
+        if (err) console.error('❌ Failed to send method response:', err.message);
+      });
+      return;
     }
-    this.isConnected = false;
+
+    try {
+      // Execute the command via the registered callback
+      const result = await this.onCommandCallback(methodName, request.payload);
+      
+      // Send immediate response back to IoT Hub
+      const status = result.success ? 200 : 400;
+      response.send(status, result, (err) => {
+        if (err) console.error('❌ Failed to send method response:', err.message);
+        else console.log(`✅ Direct Method '${methodName}' response sent (${status})`);
+      });
+    } catch (error) {
+      console.error(`❌ Direct Method '${methodName}' execution failed:`, error.message);
+      response.send(500, { success: false, error: error.message }, (err) => {
+        if (err) console.error('❌ Failed to send method response:', err.message);
+      });
+    }
   }
 
   /**
-   * Handle incoming cloud-to-device messages
+   * Handle incoming cloud-to-device messages (Fallback)
    */
   async _handleCloudMessage(msg) {
     try {
@@ -100,182 +132,81 @@ class IoTDeviceService {
       try {
         command = JSON.parse(messageData);
       } catch (parseError) {
-        // Handle non-JSON messages (legacy support)
         command = { command: messageData };
       }
 
-      console.log(`📨 Received IoT command: ${command.command}`, command.payload || '');
+      console.log(`📨 Received C2D command: ${command.command}`, command.payload || '');
 
-      // Add to command history
       this._addToHistory({
         timestamp: new Date().toISOString(),
         command: command.command,
         payload: command.payload,
-        source: 'iot-hub'
+        source: 'c2d'
       });
 
-      // Execute the command
       let result = { success: false, error: 'No command handler registered' };
-
       if (this.onCommandCallback) {
         try {
           result = await this.onCommandCallback(command.command, command.payload);
         } catch (executeError) {
           result = { success: false, error: executeError.message };
-          console.error('❌ Command execution error:', executeError.message);
         }
       }
 
-      // Send acknowledgment back to IoT Hub
-      await this._sendCommandResponse(msg, result);
+      this.client.complete(msg, (err) => {
+        if (err) console.error('❌ Failed to complete message:', err.message);
+      });
 
-      // Complete the message
-      this.client.complete(msg);
-
-      console.log(`✅ Command ${command.command} processed: ${result.success ? 'SUCCESS' : 'FAILED'}`);
-
+      console.log(`✅ C2D command processed: ${result.success ? 'SUCCESS' : 'FAILED'}`);
     } catch (error) {
-      console.error('❌ Error handling IoT message:', error.message);
-      // Reject the message if processing failed
-      if (this.client) {
-        this.client.reject(msg);
-      }
+      console.error('❌ Error handling C2D message:', error.message);
+      if (this.client) this.client.reject(msg);
     }
   }
 
-  /**
-   * Send command execution result back to IoT Hub
-   */
-  async _sendCommandResponse(originalMsg, result) {
-    try {
-      const response = {
-        commandId: originalMsg.messageId,
-        deviceId: this.deviceId,
-        timestamp: new Date().toISOString(),
-        result: result
-      };
-
-      const responseMessage = new Message(JSON.stringify(response));
-      responseMessage.properties.add('command-response', 'true');
-      responseMessage.messageId = `resp-${originalMsg.messageId}-${Date.now()}`;
-
-      await this.client.sendEvent(responseMessage);
-      console.log('📤 Command response sent to IoT Hub');
-
-    } catch (error) {
-      console.error('❌ Failed to send command response:', error.message);
-    }
+  logDebug(...args) {
+    if (process.env.DEBUG === 'true') console.log('[DEBUG]', ...args);
   }
 
-  /**
-   * Set callback for handling commands
-   */
   onCommand(callback) {
     this.onCommandCallback = callback;
   }
 
-  /**
-   * Send device telemetry to IoT Hub
-   */
+  async disconnect() {
+    if (this.client && this.isConnected) {
+      try {
+        await this.client.close();
+        console.log('👋 Disconnected from IoT Hub');
+      } catch (error) {
+        console.error('❌ Error disconnecting:', error.message);
+      }
+    }
+    this.isConnected = false;
+  }
+
   async sendTelemetry(data) {
-    if (!this.isConnected || !this.client) {
-      console.log('⚠️ Cannot send telemetry - not connected to IoT Hub');
-      return false;
-    }
-
+    if (!this.isConnected || !this.client) return false;
     try {
-      const telemetryMessage = new Message(JSON.stringify({
-        deviceId: this.deviceId,
-        timestamp: new Date().toISOString(),
-        ...data
-      }));
-
-      await this.client.sendEvent(telemetryMessage);
-      console.log('📊 Telemetry sent to IoT Hub');
+      const msg = new Message(JSON.stringify({ deviceId: this.deviceId, timestamp: new Date().toISOString(), ...data }));
+      await this.client.sendEvent(msg);
       return true;
-
     } catch (error) {
-      console.error('❌ Failed to send telemetry:', error.message);
+      console.error('❌ Telemetry failed:', error.message);
       return false;
     }
   }
 
-  /**
-   * Update device twin reported properties
-   */
-  async updateReportedProperties(properties) {
-    if (!this.isConnected || !this.client) {
-      console.log('⚠️ Cannot update twin - not connected to IoT Hub');
-      return false;
-    }
-
-    try {
-      const patch = {
-        deviceId: this.deviceId,
-        lastUpdate: new Date().toISOString(),
-        ...properties
-      };
-
-      await new Promise((resolve, reject) => {
-        this.client.getTwin((err, twin) => {
-          if (err) {
-            reject(err);
-            return;
-          }
-
-          twin.properties.reported.update(patch, (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-      });
-
-      console.log('📝 Device twin updated');
-      return true;
-
-    } catch (error) {
-      console.error('❌ Failed to update device twin:', error.message);
-      return false;
-    }
+  _addToHistory(entry) {
+    this.commandHistory.push(entry);
+    if (this.commandHistory.length > this.maxHistorySize) this.commandHistory.shift();
   }
 
-  /**
-   * Get recent command history
-   */
-  getCommandHistory(limit = 10) {
-    return this.commandHistory.slice(-limit);
-  }
-
-  /**
-   * Add command to history
-   */
-  _addToHistory(commandEntry) {
-    this.commandHistory.push(commandEntry);
-    if (this.commandHistory.length > this.maxHistorySize) {
-      this.commandHistory.shift(); // Remove oldest
-    }
-  }
-
-  /**
-   * Get service status
-   */
   getStatus() {
     return {
       connected: this.isConnected,
       deviceId: this.deviceId,
-      hasConnectionString: !!this.connectionString,
-      commandHistorySize: this.commandHistory.length,
       lastCommand: this.commandHistory.length > 0 ? this.commandHistory[this.commandHistory.length - 1] : null
     };
-  }
-
-  /**
-   * Cleanup resources
-   */
-  async cleanup() {
-    await this.disconnect();
-    this.client = null;
-    this.onCommandCallback = null;
   }
 }
 
