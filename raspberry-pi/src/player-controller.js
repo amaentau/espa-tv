@@ -123,16 +123,20 @@ class PlayerController {
     } catch (_) {}
   }
 
-  async goToStream(streamUrl) {
-    console.log(`🎬 Going to stream: ${streamUrl}`);
-    await this.page.goto(streamUrl, { waitUntil: 'networkidle2', timeout: 45000 });
+  async goToStream(streamUrl, isInitialBoot = true) {
+    const startTime = Date.now();
+    console.log(`🎬 Going to stream: ${streamUrl} (Boot: ${isInitialBoot})`);
     
-    // Retry login detection for 5 seconds as forms often load via JS
+    await this.page.goto(streamUrl, { 
+      waitUntil: isInitialBoot ? 'networkidle2' : 'domcontentloaded', 
+      timeout: 45000 
+    });
+    
     let isLogin = false;
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < (isInitialBoot ? 10 : 2); i++) {
       isLogin = await this.isLoginPage();
       if (isLogin) break;
-      await this.sleep(500);
+      await this.sleep(200);
     }
 
     if (isLogin) {
@@ -142,9 +146,12 @@ class PlayerController {
       await this.page.goto(streamUrl, { waitUntil: 'networkidle2', timeout: 45000 });
     }
 
-    await this.playStream();
-    await this.sleep(500);
-    await this.enterFullscreen();
+    await this.playStream(isInitialBoot);
+    if (isInitialBoot) await this.sleep(500);
+    await this.enterFullscreen(isInitialBoot);
+    
+    const elapsed = Date.now() - startTime;
+    console.log(`⏱️ Performance: goToStream took ${elapsed}ms`);
   }
 
   async isLoginPage() {
@@ -172,7 +179,6 @@ class PlayerController {
     console.log('🔐 Starting login process...');
 
     try {
-      // If we're not already on a login page, go to configured login URL once
       const onLoginPage = await this.page.evaluate(() => {
         const hasEmail = !!document.querySelector('input[type="email"], input[name*="email" i], #email');
         const hasPassword = !!document.querySelector('input[type="password"], input[name*="password" i], #password');
@@ -186,10 +192,8 @@ class PlayerController {
         await this.page.goto(loginUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
       }
 
-      // Wait for page to fully load
       await this.sleep(2000);
 
-      // Try to auto-accept common cookie consent banners to unblock inputs
       try {
         const accepted = await this.page.evaluate(() => {
           const matches = ['accept', 'agree', 'consent', 'allow'];
@@ -201,36 +205,19 @@ class PlayerController {
               return true;
             }
           }
-          const knownSelectors = [
-            '#onetrust-accept-btn-handler',
-            '.onetrust-accept-btn-handler',
-            '#consent-accept',
-            '.cookie-accept',
-          ];
+          const knownSelectors = ['#onetrust-accept-btn-handler', '.onetrust-accept-btn-handler', '#consent-accept', '.cookie-accept'];
           for (const sel of knownSelectors) {
             const el = document.querySelector(sel);
             if (el) { el.click(); return true; }
           }
           return false;
         });
-        if (accepted) {
-          await this.sleep(500);
-        }
-      } catch (_) {
-        // Ignore consent errors
-      }
+        if (accepted) await this.sleep(500);
+      } catch (_) {}
 
-      // Find and fill login form fields
       this.logDebug('🔐 Filling login form fields...');
 
-      // Try email field with expanded selectors
-      const emailSelectors = [
-        'input[type="email"]',
-        'input[name="email"]',
-        'input[name*="email" i]',
-        '#email'
-      ];
-
+      const emailSelectors = ['input[type="email"]', 'input[name="email"]', 'input[name*="email" i]', '#email'];
       let emailFound = false;
       for (const sel of emailSelectors) {
         try {
@@ -244,14 +231,7 @@ class PlayerController {
         } catch (_) {}
       }
 
-      // Try password field with expanded selectors
-      const pwdSelectors = [
-        'input[type="password"]',
-        'input[name="password"]',
-        'input[name*="password" i]',
-        '#password'
-      ];
-
+      const pwdSelectors = ['input[type="password"]', 'input[name="password"]', 'input[name*="password" i]', '#password'];
       let pwdFound = false;
       for (const sel of pwdSelectors) {
         try {
@@ -270,10 +250,7 @@ class PlayerController {
         return;
       }
 
-      // Wait a bit more for form to be fully interactive after filling fields
       await this.sleep(1000);
-
-      // Click submit button with comprehensive search and retry logic
       this.logDebug('🔘 Looking for submit button...');
 
       let clicked = false;
@@ -282,31 +259,22 @@ class PlayerController {
       for (let attempt = 1; attempt <= maxRetries && !clicked; attempt++) {
         this.logDebug(`🔄 Submit button attempt ${attempt}/${maxRetries}`);
 
-        // Try standard selectors first
-        const submitSelectors = [
-          'button[type="submit"]',
-          'input[type="submit"]',
-          'button[name="login"]',
-          'button[name="signin"]',
-          '[data-testid*="login" i]'
-        ];
+        const submitSelectors = ['button[type="submit"]', 'input[type="submit"]', 'button[name="login"]', 'button[name="signin"]', '[data-testid*="login" i]'];
 
         for (const sel of submitSelectors) {
           try {
-            // Wait for element to be visible and clickable (not disabled)
             await this.page.waitForFunction(
               (selector) => {
                 const el = document.querySelector(selector);
                 return el && el.offsetParent !== null && !el.disabled &&
                        (el.type !== 'submit' || !el.form || el.form.checkValidity() !== false);
               },
-              { timeout: attempt === 1 ? 5000 : 2000 }, // Shorter timeout on retries
+              { timeout: attempt === 1 ? 5000 : 2000 },
               sel
             );
 
             const elements = await this.page.$$(sel);
             if (elements.length > 0) {
-              // Additional check: ensure element is actually clickable
               const isClickable = await elements[0].evaluate(el =>
                 !el.disabled && el.offsetParent !== null &&
                 window.getComputedStyle(el).visibility !== 'hidden'
@@ -317,8 +285,6 @@ class PlayerController {
                 clicked = true;
                 this.logDebug(`✅ Clicked submit button: ${sel} (attempt ${attempt})`);
                 break;
-              } else {
-                this.logDebug(`⚠️ Submit button found but not clickable: ${sel} (attempt ${attempt})`);
               }
             }
           } catch (e) {
@@ -326,18 +292,12 @@ class PlayerController {
           }
         }
 
-        // If not clicked and not the last attempt, wait before retry
         if (!clicked && attempt < maxRetries) {
-          const retryDelay = attempt * 1000; // 1s, 2s, 3s delays
-          this.logDebug(`⏳ Submit button not found/clickable, retrying in ${retryDelay}ms...`);
-          await this.sleep(retryDelay);
+          await this.sleep(attempt * 1000);
         }
       }
 
-      // No aggressive text-search clicking; fall back to pressing Enter
-
       if (!clicked) {
-        // Last resort: try to find the form and submit it
         try {
           const formSubmitted = await this.page.evaluate(() => {
             const form = document.querySelector('form');
@@ -345,7 +305,6 @@ class PlayerController {
               form.submit();
               return true;
             }
-            // Try to find submit button within form and click it
             const submitBtn = form?.querySelector('button[type="submit"], input[type="submit"]');
             if (submitBtn && !submitBtn.disabled) {
               submitBtn.click();
@@ -353,46 +312,19 @@ class PlayerController {
             }
             return false;
           });
-          if (formSubmitted) {
-            this.logDebug('✅ Submitted form directly');
-            clicked = true;
-          }
-        } catch (e) {
-          this.logDebug(`⚠️ Form submission failed: ${e.message}`);
-        }
+          if (formSubmitted) clicked = true;
+        } catch (e) {}
       }
 
-      if (!clicked) {
-        this.logDebug('⚠️ No submit button found, pressing Enter...');
-        await this.page.keyboard.press('Enter');
-      }
+      if (!clicked) await this.page.keyboard.press('Enter');
 
-      // Wait for navigation or form submission with extended timeout for slow networks
-      const postSubmitWait = new Promise(resolve => setTimeout(resolve, 8000)); // Increased to 8 seconds
-      const navigationPromise = this.page.waitForNavigation({
-        waitUntil: 'networkidle2',
-        timeout: 10000 // Increased to 10 seconds
-      }).catch(() => {});
+      const postSubmitWait = new Promise(resolve => setTimeout(resolve, 8000));
+      const navigationPromise = this.page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }).catch(() => {});
 
       await Promise.race([navigationPromise, postSubmitWait]);
       this.logDebug(`📍 After login attempt: ${this.page.url()}`);
-
-      // Check if we're still on a login page or if login succeeded
-      const stillOnLogin = await this.page.evaluate(() => {
-        const currentPath = window.location.pathname.toLowerCase();
-        const hasPasswordField = !!document.querySelector('input[type="password"]');
-        return currentPath.includes('login') || currentPath.includes('signin') || hasPasswordField;
-      });
-
-      if (stillOnLogin) {
-        this.logDebug('⚠️ Still on login page, login may have failed');
-      } else {
-        this.logDebug('✅ Login appears successful - redirected away from login page');
-      }
-
     } catch (error) {
       console.error('❌ Login error:', error.message);
-      // Don't throw - continue even if login fails
     }
   }
 
@@ -425,57 +357,59 @@ class PlayerController {
     return false;
   }
 
-  async playStream() {
-    console.log('▶️ Attempting to start stream playback...');
+  async playStream(isInitialBoot = false) {
+    const startTime = Date.now();
+    console.log(`▶️ Play action triggered (FastPath: ${!isInitialBoot})`);
+    
     try {
       if (await this.isLoginPage()) return;
 
-      await this.waitForPlayerSurface(5000);
-      
-      if (await this.isVideoPlaying()) {
-        console.log('✅ Video already playing');
-        return;
+      if (isInitialBoot) {
+        await this.waitForPlayerSurface(5000);
+        if (await this.isVideoPlaying()) {
+          console.log('✅ Video already playing');
+          return;
+        }
+        await this.waitForPlayerReady(8000);
+        await this.sleep(1000); // Stabilization
       }
-
-      await this.waitForPlayerReady(8000);
-      await this.sleep(1000); // Stabilization
       
-      await this.clickControl('play', 'play');
+      await this.clickControl('play', 'play', !isInitialBoot);
       
-      await this.sleep(2000);
-      if (await this.isVideoPlaying()) {
-        console.log('✅ Playback successfully started');
-      } else {
-        console.warn('⚠️ Play click completed but video may not be playing yet');
+      if (isInitialBoot) {
+        await this.sleep(2000);
+        console.log(`✅ Initial boot play verification: ${await this.isVideoPlaying() ? 'PLAYING' : 'NOT PLAYING'}`);
       }
+      
+      const elapsed = Date.now() - startTime;
+      console.log(`⏱️ Performance: playStream took ${elapsed}ms`);
     } catch (e) {
-      console.error('❌ Error starting playback:', e.message);
+      console.error('❌ Error in playStream:', e.message);
     }
   }
 
   async pauseStream() {
-    console.log('⏸️ Attempting to pause stream playback...');
+    const startTime = Date.now();
+    console.log('⏸️ Pause action triggered (FastPath: true)');
     try {
       if (await this.isLoginPage()) return;
-      if (!(await this.isVideoPlaying())) {
-        console.log('ℹ️ Already paused');
-        return;
-      }
-      await this.clickControl('play', 'play'); // Toggle
-      await this.sleep(1000);
+      await this.clickControl('play', 'play', true);
+      console.log(`⏱️ Performance: pauseStream took ${Date.now() - startTime}ms`);
     } catch (e) {
-      console.error('❌ Error pausing playback:', e.message);
+      console.error('❌ Error in pauseStream:', e.message);
     }
   }
 
-  async enterFullscreen() {
-    console.log('🖥️ Attempting to enter fullscreen mode...');
+  async enterFullscreen(isInitialBoot = false) {
+    const startTime = Date.now();
+    console.log(`🖥️ Fullscreen action triggered (FastPath: ${!isInitialBoot})`);
     try {
       if (await this.isLoginPage()) return;
-      await this.waitForPlayerSurface(3000);
-      await this.clickControl('fullscreen', 'fullscreen');
+      if (isInitialBoot) await this.waitForPlayerSurface(3000);
+      await this.clickControl('fullscreen', 'fullscreen', !isInitialBoot);
+      console.log(`⏱️ Performance: enterFullscreen took ${Date.now() - startTime}ms`);
     } catch (e) {
-      console.error('❌ Error entering fullscreen:', e.message);
+      console.error('❌ Error in enterFullscreen:', e.message);
     }
   }
 
@@ -488,15 +422,20 @@ class PlayerController {
     } catch (_) { return false; }
   }
 
-  async clickControl(action, label = '') {
+  async clickControl(action, label = '', fastPath = false) {
     const coords = await this.resolveClickCoordinates(action);
-    this.logDebug(`準備点击 '${action}' at (${coords.x}, ${coords.y})`);
+    this.logDebug(`准备点击 '${action}' at (${coords.x}, ${coords.y}) (Fast: ${fastPath})`);
     
-    await this.page.mouse.move(coords.x, coords.y);
-    await this.showClickOverlay(coords.x, coords.y, label || action);
-    await this.sleep(250);
+    if (!fastPath) {
+      await this.page.mouse.move(coords.x, coords.y);
+      await this.showClickOverlay(coords.x, coords.y, label || action);
+      await this.sleep(250);
+    } else {
+      // Near-instant path: Jump directly to click
+      this.showClickOverlay(coords.x, coords.y, label || action); // Fire and forget
+    }
+    
     await this.page.mouse.click(coords.x, coords.y);
-    
     this.logDebug(`🖱️ Clicked ${action} at (${coords.x}, ${coords.y})`);
   }
 

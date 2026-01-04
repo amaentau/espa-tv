@@ -141,7 +141,7 @@ class EspaTvPlayer {
 
     // 5. Start Playback
     if (this.streamUrl) {
-      await this.player.goToStream(this.streamUrl);
+      await this.player.goToStream(this.streamUrl, true); // Initial boot: true
       this.state = PlayerState.PLAYING;
     } else {
       console.warn('⚠️ No stream URL found. Waiting for commands.');

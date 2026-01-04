@@ -42,7 +42,6 @@ class IoTDeviceService {
         this.client = Client.fromConnectionString(connectionString, Mqtt);
       }
 
-      // Set up event handlers
       this.client.on('connect', () => {
         console.log('✅ Connected to IoT Hub');
         this.isConnected = true;
@@ -58,18 +57,15 @@ class IoTDeviceService {
         this.isConnected = false;
       });
 
-      // 1. Set up Direct Method handlers (Primary for low latency)
-      // We catch all method calls and route them via our handler
-      this.client.onDeviceMethod('play', (req, res) => this._onDirectMethod('play', req, res));
-      this.client.onDeviceMethod('pause', (req, res) => this._onDirectMethod('pause', req, res));
-      this.client.onDeviceMethod('fullscreen', (req, res) => this._onDirectMethod('fullscreen', req, res));
-      this.client.onDeviceMethod('restart', (req, res) => this._onDirectMethod('restart', req, res));
-      this.client.onDeviceMethod('status', (req, res) => this._onDirectMethod('status', req, res));
+      // Direct Method Handlers
+      const methods = ['play', 'pause', 'fullscreen', 'restart', 'status'];
+      methods.forEach(method => {
+        this.client.onDeviceMethod(method, (req, res) => this._onDirectMethod(method, req, res));
+      });
 
-      // 2. Set up cloud-to-device message handler (Fallback)
+      // Fallback C2D
       this.client.on('message', this._handleCloudMessage.bind(this));
 
-      // Connect
       await this.client.open();
       console.log('🎯 IoT Hub device ready (Direct Methods + C2D Fallback)');
       return true;
@@ -82,11 +78,11 @@ class IoTDeviceService {
   }
 
   /**
-   * Universal Direct Method Handler
+   * Universal Direct Method Handler with Fast-Path support
    */
   async _onDirectMethod(methodName, request, response) {
+    const startTime = Date.now();
     console.log(`⚡ Direct Method received: ${methodName}`);
-    this.logDebug(`📦 Payload:`, request.payload);
 
     this._addToHistory({
       timestamp: new Date().toISOString(),
@@ -96,46 +92,57 @@ class IoTDeviceService {
     });
 
     if (!this.onCommandCallback) {
-      console.error('❌ No command callback registered');
-      response.send(501, { error: 'No command handler registered on device' }, (err) => {
-        if (err) console.error('❌ Failed to send method response:', err.message);
+      response.send(501, { error: 'No handler registered' }, (err) => {
+        if (err) console.error('❌ Failed to send 501:', err.message);
       });
       return;
     }
 
-    try {
-      // Execute the command via the registered callback
-      const result = await this.onCommandCallback(methodName, request.payload);
-      
-      // Send immediate response back to IoT Hub
-      const status = result.success ? 200 : 400;
-      response.send(status, result, (err) => {
-        if (err) console.error('❌ Failed to send method response:', err.message);
-        else console.log(`✅ Direct Method '${methodName}' response sent (${status})`);
+    // "Fast-Path" strategy:
+    // We send the 200 OK acknowledgement IMMEDIATELY for UI responsiveness,
+    // then continue executing the browser automation in the background.
+    const fastPathMethods = ['play', 'pause', 'fullscreen'];
+    const isFastPath = fastPathMethods.includes(methodName);
+
+    if (isFastPath) {
+      // Send acknowledgement immediately
+      response.send(200, { success: true, mode: 'fast-path', status: 'Acknowledged' }, (err) => {
+        if (err) console.error('❌ Failed to send FastPath ack:', err.message);
+        else console.log(`✅ Direct Method '${methodName}' acknowledged (Fast-Path) in ${Date.now() - startTime}ms`);
       });
-    } catch (error) {
-      console.error(`❌ Direct Method '${methodName}' execution failed:`, error.message);
-      response.send(500, { success: false, error: error.message }, (err) => {
-        if (err) console.error('❌ Failed to send method response:', err.message);
+
+      // Execute in background
+      this.onCommandCallback(methodName, request.payload).catch(err => {
+        console.error(`❌ Background command '${methodName}' failed:`, err.message);
       });
+    } else {
+      // Regular path for status/restart where we want to wait for the actual result
+      try {
+        const result = await this.onCommandCallback(methodName, request.payload);
+        const status = result.success ? 200 : 400;
+        response.send(status, result, (err) => {
+          if (err) console.error('❌ Failed to send response:', err.message);
+          else console.log(`✅ Direct Method '${methodName}' finished in ${Date.now() - startTime}ms`);
+        });
+      } catch (error) {
+        response.send(500, { success: false, error: error.message }, (err) => {
+          if (err) console.error('❌ Failed to send 500:', err.message);
+        });
+      }
     }
   }
 
-  /**
-   * Handle incoming cloud-to-device messages (Fallback)
-   */
   async _handleCloudMessage(msg) {
     try {
       const messageData = msg.data.toString('utf8');
       let command;
-
       try {
         command = JSON.parse(messageData);
-      } catch (parseError) {
+      } catch (e) {
         command = { command: messageData };
       }
 
-      console.log(`📨 Received C2D command: ${command.command}`, command.payload || '');
+      console.log(`📨 Received C2D command: ${command.command}`);
 
       this._addToHistory({
         timestamp: new Date().toISOString(),
@@ -144,22 +151,18 @@ class IoTDeviceService {
         source: 'c2d'
       });
 
-      let result = { success: false, error: 'No command handler registered' };
       if (this.onCommandCallback) {
-        try {
-          result = await this.onCommandCallback(command.command, command.payload);
-        } catch (executeError) {
-          result = { success: false, error: executeError.message };
-        }
+        // C2D is already asynchronous by nature (queued)
+        this.onCommandCallback(command.command, command.payload).catch(err => {
+          console.error(`❌ C2D command '${command.command}' failed:`, err.message);
+        });
       }
 
       this.client.complete(msg, (err) => {
-        if (err) console.error('❌ Failed to complete message:', err.message);
+        if (err) console.error('❌ Failed to complete C2D:', err.message);
       });
-
-      console.log(`✅ C2D command processed: ${result.success ? 'SUCCESS' : 'FAILED'}`);
     } catch (error) {
-      console.error('❌ Error handling C2D message:', error.message);
+      console.error('❌ Error handling C2D:', error.message);
       if (this.client) this.client.reject(msg);
     }
   }
@@ -176,7 +179,6 @@ class IoTDeviceService {
     if (this.client && this.isConnected) {
       try {
         await this.client.close();
-        console.log('👋 Disconnected from IoT Hub');
       } catch (error) {
         console.error('❌ Error disconnecting:', error.message);
       }
@@ -191,7 +193,6 @@ class IoTDeviceService {
       await this.client.sendEvent(msg);
       return true;
     } catch (error) {
-      console.error('❌ Telemetry failed:', error.message);
       return false;
     }
   }
