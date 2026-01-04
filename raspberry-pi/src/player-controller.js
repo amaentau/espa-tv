@@ -125,14 +125,21 @@ class PlayerController {
 
   async goToStream(streamUrl) {
     console.log(`🎬 Going to stream: ${streamUrl}`);
-    await this.page.goto(streamUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await this.page.goto(streamUrl, { waitUntil: 'networkidle2', timeout: 45000 });
     
-    if (await this.isLoginPage()) {
+    // Retry login detection for 5 seconds as forms often load via JS
+    let isLogin = false;
+    for (let i = 0; i < 10; i++) {
+      isLogin = await this.isLoginPage();
+      if (isLogin) break;
+      await this.sleep(500);
+    }
+
+    if (isLogin) {
       console.log('🔐 Detected login page, authenticating...');
       await this.loginToVeo();
-      // After login, navigate back to the stream
       console.log(`🎬 Returning to stream: ${streamUrl}`);
-      await this.page.goto(streamUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await this.page.goto(streamUrl, { waitUntil: 'networkidle2', timeout: 45000 });
     }
 
     await this.playStream();
@@ -145,7 +152,7 @@ class PlayerController {
       return await this.page.evaluate(() => {
         const path = (window.location.pathname || '').toLowerCase();
         const url = (window.location.href || '').toLowerCase();
-        const hasEmail = !!document.querySelector('input[type="email"], input[name*="email" i], #email');
+        const hasEmail = !!document.querySelector('input[type="email"], input[name*="email" i], #email, input[id*="username" i]');
         const hasPassword = !!document.querySelector('input[type="password"], input[name*="password" i], #password');
         const hasAuthForm = !!document.querySelector('form[action*="login" i], form[action*="signin" i]');
         const loginMarkers = /login|signin|sign-in|authenticate/.test(path) || /login|signin/.test(url);
@@ -158,65 +165,234 @@ class PlayerController {
 
   async loginToVeo() {
     if (!this.credentials) {
-      console.log('⚠️ No credentials available for login');
+      console.log('⚠️ No credentials found, skipping login');
       return;
     }
 
+    console.log('🔐 Starting login process...');
+
     try {
-      // 1. Handle Cookie Banners first
-      await this.page.evaluate(() => {
-        const matches = ['accept', 'agree', 'consent', 'allow'];
-        const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
-        for (const btn of buttons) {
-          const text = (btn.innerText || '').toLowerCase();
-          if (matches.some(m => text.includes(m))) {
-            btn.click();
-            return true;
-          }
-        }
-        return false;
+      // If we're not already on a login page, go to configured login URL once
+      const onLoginPage = await this.page.evaluate(() => {
+        const hasEmail = !!document.querySelector('input[type="email"], input[name*="email" i], #email');
+        const hasPassword = !!document.querySelector('input[type="password"], input[name*="password" i], #password');
+        const currentPath = window.location.pathname.toLowerCase();
+        return (hasEmail && hasPassword) || currentPath.includes('login') || currentPath.includes('signin');
       });
+
+      if (!onLoginPage) {
+        const loginUrl = this.config.login?.url || 'https://live.veo.co/login';
+        console.log(`🌐 Navigating to login: ${loginUrl}`);
+        await this.page.goto(loginUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      }
+
+      // Wait for page to fully load
+      await this.sleep(2000);
+
+      // Try to auto-accept common cookie consent banners to unblock inputs
+      try {
+        const accepted = await this.page.evaluate(() => {
+          const matches = ['accept', 'agree', 'consent', 'allow'];
+          const candidates = Array.from(document.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"]'));
+          for (const el of candidates) {
+            const text = (el.innerText || el.value || '').toLowerCase();
+            if (matches.some(m => text.includes(m))) {
+              el.click();
+              return true;
+            }
+          }
+          const knownSelectors = [
+            '#onetrust-accept-btn-handler',
+            '.onetrust-accept-btn-handler',
+            '#consent-accept',
+            '.cookie-accept',
+          ];
+          for (const sel of knownSelectors) {
+            const el = document.querySelector(sel);
+            if (el) { el.click(); return true; }
+          }
+          return false;
+        });
+        if (accepted) {
+          await this.sleep(500);
+        }
+      } catch (_) {
+        // Ignore consent errors
+      }
+
+      // Find and fill login form fields
+      this.logDebug('🔐 Filling login form fields...');
+
+      // Try email field with expanded selectors
+      const emailSelectors = [
+        'input[type="email"]',
+        'input[name="email"]',
+        'input[name*="email" i]',
+        '#email'
+      ];
+
+      let emailFound = false;
+      for (const sel of emailSelectors) {
+        try {
+          const elements = await this.page.$$(sel);
+          if (elements.length > 0) {
+            await elements[0].type(this.credentials.email, { delay: 100 });
+            emailFound = true;
+            this.logDebug(`✅ Email field found and filled: ${sel}`);
+            break;
+          }
+        } catch (_) {}
+      }
+
+      // Try password field with expanded selectors
+      const pwdSelectors = [
+        'input[type="password"]',
+        'input[name="password"]',
+        'input[name*="password" i]',
+        '#password'
+      ];
+
+      let pwdFound = false;
+      for (const sel of pwdSelectors) {
+        try {
+          const elements = await this.page.$$(sel);
+          if (elements.length > 0) {
+            await elements[0].type(this.credentials.password, { delay: 100 });
+            pwdFound = true;
+            this.logDebug(`✅ Password field found and filled: ${sel}`);
+            break;
+          }
+        } catch (_) {}
+      }
+
+      if (!emailFound || !pwdFound) {
+        this.logDebug('⚠️ Could not find both email and password fields');
+        return;
+      }
+
+      // Wait a bit more for form to be fully interactive after filling fields
       await this.sleep(1000);
 
-      // 2. Fill Email
-      const emailSelectors = ['input[type="email"]', 'input[name="email"]', '#email'];
-      let emailEl = null;
-      for (const sel of emailSelectors) {
-        emailEl = await this.page.$(sel);
-        if (emailEl) break;
-      }
-      if (emailEl) await emailEl.type(this.credentials.email, { delay: 50 });
+      // Click submit button with comprehensive search and retry logic
+      this.logDebug('🔘 Looking for submit button...');
 
-      // 3. Fill Password
-      const passSelectors = ['input[type="password"]', 'input[name="password"]', '#password'];
-      let passEl = null;
-      for (const sel of passSelectors) {
-        passEl = await this.page.$(sel);
-        if (passEl) break;
-      }
-      if (passEl) await passEl.type(this.credentials.password, { delay: 50 });
+      let clicked = false;
+      const maxRetries = 3;
 
-      // 4. Submit
-      const submitSelectors = ['button[type="submit"]', 'input[type="submit"]', '.login-button'];
-      let submitClicked = false;
-      for (const sel of submitSelectors) {
-        const btn = await this.page.$(sel);
-        if (btn) {
-          await btn.click();
-          submitClicked = true;
-          break;
+      for (let attempt = 1; attempt <= maxRetries && !clicked; attempt++) {
+        this.logDebug(`🔄 Submit button attempt ${attempt}/${maxRetries}`);
+
+        // Try standard selectors first
+        const submitSelectors = [
+          'button[type="submit"]',
+          'input[type="submit"]',
+          'button[name="login"]',
+          'button[name="signin"]',
+          '[data-testid*="login" i]'
+        ];
+
+        for (const sel of submitSelectors) {
+          try {
+            // Wait for element to be visible and clickable (not disabled)
+            await this.page.waitForFunction(
+              (selector) => {
+                const el = document.querySelector(selector);
+                return el && el.offsetParent !== null && !el.disabled &&
+                       (el.type !== 'submit' || !el.form || el.form.checkValidity() !== false);
+              },
+              { timeout: attempt === 1 ? 5000 : 2000 }, // Shorter timeout on retries
+              sel
+            );
+
+            const elements = await this.page.$$(sel);
+            if (elements.length > 0) {
+              // Additional check: ensure element is actually clickable
+              const isClickable = await elements[0].evaluate(el =>
+                !el.disabled && el.offsetParent !== null &&
+                window.getComputedStyle(el).visibility !== 'hidden'
+              );
+
+              if (isClickable) {
+                await elements[0].click();
+                clicked = true;
+                this.logDebug(`✅ Clicked submit button: ${sel} (attempt ${attempt})`);
+                break;
+              } else {
+                this.logDebug(`⚠️ Submit button found but not clickable: ${sel} (attempt ${attempt})`);
+              }
+            }
+          } catch (e) {
+            this.logDebug(`⚠️ Submit button selector failed: ${sel} (attempt ${attempt}) - ${e.message}`);
+          }
+        }
+
+        // If not clicked and not the last attempt, wait before retry
+        if (!clicked && attempt < maxRetries) {
+          const retryDelay = attempt * 1000; // 1s, 2s, 3s delays
+          this.logDebug(`⏳ Submit button not found/clickable, retrying in ${retryDelay}ms...`);
+          await this.sleep(retryDelay);
         }
       }
 
-      if (!submitClicked) {
+      // No aggressive text-search clicking; fall back to pressing Enter
+
+      if (!clicked) {
+        // Last resort: try to find the form and submit it
+        try {
+          const formSubmitted = await this.page.evaluate(() => {
+            const form = document.querySelector('form');
+            if (form && form.checkValidity()) {
+              form.submit();
+              return true;
+            }
+            // Try to find submit button within form and click it
+            const submitBtn = form?.querySelector('button[type="submit"], input[type="submit"]');
+            if (submitBtn && !submitBtn.disabled) {
+              submitBtn.click();
+              return true;
+            }
+            return false;
+          });
+          if (formSubmitted) {
+            this.logDebug('✅ Submitted form directly');
+            clicked = true;
+          }
+        } catch (e) {
+          this.logDebug(`⚠️ Form submission failed: ${e.message}`);
+        }
+      }
+
+      if (!clicked) {
+        this.logDebug('⚠️ No submit button found, pressing Enter...');
         await this.page.keyboard.press('Enter');
       }
 
-      console.log('⏳ Waiting for navigation after login...');
-      await this.page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
-      console.log('✅ Login process completed');
-    } catch (e) {
-      console.error('❌ Robust login failed:', e.message);
+      // Wait for navigation or form submission with extended timeout for slow networks
+      const postSubmitWait = new Promise(resolve => setTimeout(resolve, 8000)); // Increased to 8 seconds
+      const navigationPromise = this.page.waitForNavigation({
+        waitUntil: 'networkidle2',
+        timeout: 10000 // Increased to 10 seconds
+      }).catch(() => {});
+
+      await Promise.race([navigationPromise, postSubmitWait]);
+      this.logDebug(`📍 After login attempt: ${this.page.url()}`);
+
+      // Check if we're still on a login page or if login succeeded
+      const stillOnLogin = await this.page.evaluate(() => {
+        const currentPath = window.location.pathname.toLowerCase();
+        const hasPasswordField = !!document.querySelector('input[type="password"]');
+        return currentPath.includes('login') || currentPath.includes('signin') || hasPasswordField;
+      });
+
+      if (stillOnLogin) {
+        this.logDebug('⚠️ Still on login page, login may have failed');
+      } else {
+        this.logDebug('✅ Login appears successful - redirected away from login page');
+      }
+
+    } catch (error) {
+      console.error('❌ Login error:', error.message);
+      // Don't throw - continue even if login fails
     }
   }
 
