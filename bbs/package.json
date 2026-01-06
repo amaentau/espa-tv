@@ -5,7 +5,16 @@
   "description": "Minimal bulletin board service on Azure App Service using Azure Table Storage",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "vite",
+    "build": "echo 'Build already completed locally'",
+    "build:local": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^4.0.0",
+    "svelte": "^5.0.0",
+    "vite": "^5.0.0"
   },
   "dependencies": {
     "@azure/data-tables": "^13.3.0",

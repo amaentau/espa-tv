@@ -14,7 +14,13 @@ const port = process.env.PORT || 3000;
 // Basic Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Serve static files from the Svelte build output
+const distPath = path.join(__dirname, 'dist');
+const publicPath = path.join(__dirname, 'public');
+
+app.use(express.static(distPath));
+app.use(express.static(publicPath)); // Fallback for images like logo.png if they stay in public
 
 // Routes
 app.use('/auth', authRoutes);
@@ -22,6 +28,11 @@ app.use('/devices', deviceRoutes);
 app.use('/config', configRoutes);
 app.use('/entries', entryRoutes); // For /entries/:key
 app.use('/entry', entryRoutes);   // For /entry (POST)
+
+// Handle SPA routing - send all other requests to index.html
+app.get('*', (req, res) => {
+  res.sendFile(path.join(distPath, 'index.html'));
+});
 
 app.listen(port, () => {
   console.log(`BBS listening on port ${port}`);

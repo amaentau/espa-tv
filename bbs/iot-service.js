@@ -130,6 +130,11 @@ class IoTHubService {
 
   async registerDevice(deviceId) {
     if (this.mockMode) return this._mockRegisterDevice(deviceId);
+    
+    if (!this.isInitialized || !this.registry) {
+      throw new Error('IoT Hub Service is still initializing. Please try again in a moment.');
+    }
+
     try {
       let deviceResponse;
       try {
@@ -150,6 +155,12 @@ class IoTHubService {
 
   async getDevice(deviceId) {
     if (this.mockMode) return { deviceId, status: 'enabled', connectionState: 'Disconnected' };
+    
+    // Race condition protection: ensure clients are ready
+    if (!this.isInitialized || !this.registry) {
+      throw new Error('IoT Hub Service is still initializing. Please try again in a moment.');
+    }
+    
     const response = await this.registry.get(deviceId);
     return response.responseBody;
   }
