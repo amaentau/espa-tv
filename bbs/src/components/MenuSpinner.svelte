@@ -75,32 +75,35 @@
 
 <style>
   .spinner-container {
-    width: 100vw;
-    margin-left: calc(-50vw + 50%); /* Center edge-to-edge if parent is narrow */
+    width: 100%;
     overflow-x: auto;
-    padding: 20px 0;
-    scrollbar-width: none; /* Hide scrollbar Firefox */
-    -ms-overflow-style: none; /* Hide scrollbar IE/Edge */
-    display: flex;
-    justify-content: center;
+    overflow-y: visible;
+    padding: 15px 0;
+    scrollbar-width: none; 
+    -ms-overflow-style: none;
+    display: block; /* Use block instead of flex */
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
   }
 
   .spinner-container::-webkit-scrollbar {
-    display: none; /* Hide scrollbar Chrome/Safari */
+    display: none;
   }
 
   .ribbon {
     display: flex;
     gap: 20px;
-    padding: 0 40px;
+    padding: 0 20px; /* Reduced to 20px, combined with margin-left for scale */
     align-items: center;
+    width: max-content; /* Ensure it takes full width of content */
+    min-width: 100%;
   }
 
   .menu-item {
     background: none;
     border: none;
     padding: 0;
-    margin: 0;
+    margin: 0 10px; /* Added horizontal margin to handle scale overflow */
     cursor: pointer;
     display: flex;
     flex-direction: column;
@@ -110,6 +113,7 @@
     width: 80px;
     flex-shrink: 0;
     outline: none;
+    scroll-snap-align: center;
   }
 
   .img-wrapper {

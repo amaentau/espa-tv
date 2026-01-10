@@ -1,7 +1,6 @@
 <script>
   import { onMount } from 'svelte';
   import { deviceState, playMedia } from '../lib/deviceState.svelte.js';
-  import { isMediaCached, preCacheMedia, removeFromCache } from '../lib/cacheUtils.js';
 
   let { authState, token } = $props();
 
@@ -9,74 +8,21 @@
   let loading = $state(false);
   let error = $state('');
   let selectedStream = $state(null);
-  let showLocalPlayer = $state(false);
-  let cacheStatus = $state({}); // rowKey -> boolean
-  let videoElement = $state(null);
-
-  async function checkCacheStatus() {
-    const status = {};
-    for (const stream of streams) {
-      status[stream.rowKey] = await isMediaCached(stream.url);
-    }
-    cacheStatus = status;
-  }
-
-  async function toggleCache(stream) {
-    if (cacheStatus[stream.rowKey]) {
-      await removeFromCache(stream.url);
-    } else {
-      await preCacheMedia(stream.url);
-    }
-    setTimeout(checkCacheStatus, 500);
-  }
-
-  async function handleOrientationChange() {
-    if (!showLocalPlayer || !videoElement) return;
-
-    const isLandscape = window.innerWidth > window.innerHeight;
-    
-    try {
-      if (isLandscape) {
-        if (!document.fullscreenElement) {
-          if (videoElement.requestFullscreen) {
-            await videoElement.requestFullscreen();
-          } else if (videoElement.webkitRequestFullscreen) {
-            await videoElement.webkitRequestFullscreen();
-          }
-        }
-      } else {
-        if (document.fullscreenElement) {
-          await document.exitFullscreen();
-        }
-      }
-    } catch (err) {
-      console.warn('Fullscreen transition failed:', err);
-    }
-  }
 
   async function loadLibrary() {
     loading = true;
     error = '';
     try {
-      const [tableRes, blobRes] = await Promise.all([
-        fetch('/library/VEO', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }),
-        fetch('/library/blob/video', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        })
-      ]);
+      const res = await fetch('/library/VEO', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
 
-      if (!tableRes.ok || !blobRes.ok) throw new Error('Striimejä ei voitu hakea');
+      if (!res.ok) throw new Error('Striimejä ei voitu hakea');
       
-      const tableStreams = await tableRes.json();
-      const blobStreams = await blobRes.json();
-
-      streams = [...blobStreams, ...tableStreams].sort((a, b) => 
+      const data = await res.json();
+      streams = data.sort((a, b) => 
         new Date(b.timestamp) - new Date(a.timestamp)
       );
-      
-      await checkCacheStatus();
     } catch (err) {
       error = err.message;
     } finally {
@@ -84,13 +30,7 @@
     }
   }
 
-  onMount(() => {
-    loadLibrary();
-    window.addEventListener('resize', handleOrientationChange);
-    return () => {
-      window.removeEventListener('resize', handleOrientationChange);
-    };
-  });
+  onMount(loadLibrary);
 
   function handlePlayRemote(stream) {
     playMedia({
@@ -102,48 +42,13 @@
   }
 
   function handlePlayLocal(stream) {
-    if (stream.url.includes('.blob.core.windows.net') || stream.url.includes('/library/blob')) {
-      showLocalPlayer = true;
-      // Scroll to player
-      setTimeout(() => {
-        const panel = document.querySelector('.action-panel');
-        if (panel) panel.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
-    } else {
-      window.open(stream.url, '_blank');
-    }
-  }
-
-  function toggleFullscreen() {
-    if (!videoElement) return;
-    if (!document.fullscreenElement) {
-      if (videoElement.requestFullscreen) videoElement.requestFullscreen();
-    } else {
-      document.exitFullscreen();
-    }
-  }
-
-  function closeLocalPlayer() {
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    }
-    showLocalPlayer = false;
-  }
-
-  function truncateUrl(url) {
-    if (!url) return '';
-    try {
-      const u = new URL(url);
-      return u.hostname + u.pathname.substring(0, 10) + '...';
-    } catch (e) {
-      return url.substring(0, 20) + '...';
-    }
+    window.open(stream.url, '_blank');
   }
 </script>
 
 <div class="espatv-view fade-in">
   <div class="streams-container">
-    <h3 style="margin-bottom: 16px; color: var(--primary-color);">Videot</h3>
+    <h3 style="margin-bottom: 16px; color: var(--primary-color);">Espa TV</h3>
     
     {#if loading}
       <div class="loader"></div>
@@ -159,26 +64,16 @@
                 <span class="date">{new Date(stream.timestamp).toLocaleDateString('fi-FI')}</span>
               </div>
               <div class="stream-sub-info">
-                <span class="badge badge-{stream.metadata?.eventType?.toLowerCase().replace(/\s+/g, '') || 'default'}">{stream.metadata?.eventType || 'Video'}</span>
+                <span class="badge badge-{stream.metadata?.eventType?.toLowerCase().replace(/\s+/g, '') || 'default'}">{stream.metadata?.eventType || 'VEO'}</span>
                 <span class="creator">Lähde: {stream.creatorEmail}</span>
               </div>
             </div>
             
             <div class="stream-actions">
-              {#if stream.url.includes('.blob.core.windows.net') || stream.url.includes('/library/blob')}
-                <button 
-                  class="icon-btn cache {cacheStatus[stream.rowKey] ? 'cached' : ''}" 
-                  onclick={() => toggleCache(stream)}
-                  title={cacheStatus[stream.rowKey] ? 'Poista muistista' : 'Lataa muistiin'}
-                >
-                  {cacheStatus[stream.rowKey] ? '💾' : '📥'}
-                </button>
-              {/if}
-
               <button 
                 class="icon-btn local" 
-                onclick={() => { selectedStream = stream; handlePlayLocal(stream); }} 
-                title="Katso tässä"
+                onclick={() => handlePlayLocal(stream)} 
+                title="Avaa tässä"
               >
                 📱
               </button>
@@ -196,38 +91,11 @@
             </div>
           </div>
         {:else}
-          <div class="empty-state">Kirjastossa ei ole vielä videoita.</div>
+          <div class="empty-state">Ei suoria lähetyksiä tai tallenteita.</div>
         {/each}
       </div>
     {/if}
   </div>
-
-  {#if selectedStream && showLocalPlayer}
-    <div class="action-panel fade-in">
-      <div class="card">
-        <div class="card-header">
-          <h4>{selectedStream.title}</h4>
-          <button class="close-btn" onclick={closeLocalPlayer}>✕</button>
-        </div>
-
-        <div class="local-player-container">
-          <video 
-            bind:this={videoElement}
-            src={selectedStream.url} 
-            controls 
-            autoplay 
-            class="local-video"
-          >
-            <track kind="captions" />
-            Selaimesi ei tue videotoistoa.
-          </video>
-          <button class="fullscreen-overlay-btn" onclick={toggleFullscreen} title="Koko näyttö">
-            ⛶
-          </button>
-        </div>
-      </div>
-    </div>
-  {/if}
 </div>
 
 <style>
@@ -236,66 +104,7 @@
     flex-direction: column;
     gap: 20px;
     width: 100%;
-    padding-bottom: 80px; /* Space for global control bar */
-  }
-
-  .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-  }
-
-  .close-btn {
-    background: none;
-    border: none;
-    font-size: 20px;
-    cursor: pointer;
-    color: var(--text-sub);
-  }
-
-  .local-player-container {
-    position: relative;
-    width: 100%;
-    background: black;
-    border-radius: var(--radius);
-    overflow: hidden;
-    aspect-ratio: 16 / 9;
-  }
-
-  .fullscreen-overlay-btn {
-    position: absolute;
-    bottom: 10px;
-    right: 10px;
-    background: rgba(0, 0, 0, 0.5);
-    color: white;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 4px;
-    padding: 4px 8px;
-    font-size: 18px;
-    cursor: pointer;
-    z-index: 10;
-    transition: background 0.2s;
-    display: none; /* Only show on desktop or when not in native fullscreen */
-  }
-
-  /* Show fullscreen button on desktop */
-  @media (hover: hover) {
-    .fullscreen-overlay-btn {
-      display: block;
-    }
-    .fullscreen-overlay-btn:hover {
-      background: rgba(0, 0, 0, 0.8);
-    }
-  }
-
-  .local-video {
-    width: 100%;
-    height: 100%;
-  }
-
-  .local-video:fullscreen {
-    object-fit: contain;
+    padding-bottom: 80px;
   }
 
   .stream-list {
@@ -308,17 +117,16 @@
     background: white;
     border: 1px solid var(--border-color);
     border-radius: var(--radius);
-    padding: 12px 16px;
+    padding: 12px 12px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     transition: all 0.2s ease;
+    width: 100%;
+    min-width: 0;
   }
 
-  .stream-item:hover {
-    border-color: var(--primary-color);
-  }
-
+  .stream-item:hover { border-color: var(--primary-color); }
   .stream-item.active {
     border-color: var(--primary-color);
     background: rgba(21, 112, 57, 0.05);
@@ -330,19 +138,22 @@
     flex: 1;
     min-width: 0;
     cursor: pointer;
+    overflow: hidden;
   }
 
   .stream-main-info {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: 8px;
+    gap: 4px 8px;
     margin-bottom: 2px;
   }
 
   .title {
     font-weight: 700;
-    font-size: 15px;
-    white-space: nowrap;
+    font-size: 14px;
+    flex: 1;
+    min-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -356,15 +167,30 @@
   .stream-sub-info {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
+    overflow: hidden;
   }
 
   .creator {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-sub);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    flex: 1;
+  }
+
+  @media (max-width: 400px) {
+    .stream-item {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 12px;
+    }
+    
+    .stream-actions {
+      justify-content: flex-end;
+      margin-left: 0;
+    }
   }
 
   .stream-actions {
@@ -394,34 +220,17 @@
     transform: scale(1.1);
   }
 
-  .icon-btn.local {
-    background-color: #f0f0f0;
-    font-size: 16px;
-  }
-
+  .icon-btn.local { background-color: #f0f0f0; font-size: 16px; }
   .icon-btn.remote {
     background-color: var(--primary-color);
     color: white;
     border-color: var(--primary-color);
   }
-
   .icon-btn.offline {
     background-color: #eee;
     color: #ccc;
     cursor: not-allowed;
     border-color: #eee;
-  }
-
-  .icon-btn.cache.cached {
-    background-color: rgba(21, 112, 57, 0.1);
-    border-color: var(--primary-color);
-  }
-
-  .action-panel {
-    position: sticky;
-    bottom: 0;
-    margin-top: 10px;
-    z-index: 2000; /* Above global control bar if needed, or adjust */
   }
 
   .badge {
@@ -438,4 +247,3 @@
   .badge-peli { background: #3498db; }
   .badge-haastattelu { background: #9b59b6; }
 </style>
-

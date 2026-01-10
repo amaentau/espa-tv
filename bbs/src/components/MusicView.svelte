@@ -108,11 +108,14 @@
     background: white;
     border: 1px solid var(--border-color);
     border-radius: var(--radius);
-    padding: 12px 16px;
+    padding: 12px 12px;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 12px;
     transition: all 0.2s ease;
+    width: 100%;
+    min-width: 0;
   }
 
   .track-item:hover {
@@ -127,21 +130,42 @@
   .track-info {
     display: flex;
     flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
   }
 
   .track-title {
     font-weight: 700;
-    font-size: 15px;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .track-artist {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-sub);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .track-actions {
     display: flex;
     gap: 8px;
+  }
+
+  @media (max-width: 380px) {
+    .track-item {
+      padding: 10px 12px;
+    }
+    
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      font-size: 16px;
+    }
   }
 
   .icon-btn {

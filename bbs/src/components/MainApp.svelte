@@ -5,6 +5,7 @@
   import MenuSpinner from './MenuSpinner.svelte';
   import ProducerView from './ProducerView.svelte';
   import EspaTvView from './EspaTvView.svelte';
+  import HighlightsView from './HighlightsView.svelte';
   import MusicView from './MusicView.svelte';
   import SettingsView from './SettingsView.svelte';
   import AdminModal from './modals/AdminModal.svelte';
@@ -84,9 +85,13 @@
         onOpenAdmin={() => showAdminModal = true}
       />
     {:else if activeView === 'tv'}
-      <div class="empty-state">Espa TV Live -tulossa pian.</div>
-    {:else if activeView === 'videot'}
       <EspaTvView 
+        {authState} 
+        devices={deviceState.devices} 
+        token={authState.token}
+      />
+    {:else if activeView === 'videot'}
+      <HighlightsView 
         {authState} 
         devices={deviceState.devices} 
         token={authState.token}
@@ -114,16 +119,21 @@
   .app-layout {
     width: 100%;
     max-width: 480px;
-    margin: 0 auto;
+    margin-left: auto;
+    margin-right: auto;
     display: flex;
     flex-direction: column;
     min-height: 100vh;
-    padding-bottom: 40px;
+    padding: 10px 0 100px 0;
+    position: relative;
+    overflow-x: hidden;
   }
 
   .view-content {
-    padding: 0 20px;
+    padding: 0 16px;
     flex: 1;
+    width: 100%;
+    min-width: 0; /* Prevent flex child from pushing width */
   }
 
   .admin-link-btn {

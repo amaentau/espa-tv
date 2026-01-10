@@ -334,8 +334,14 @@
   .type-selector {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
+    gap: 6px;
     margin-bottom: 20px;
+  }
+
+  @media (max-width: 400px) {
+    .type-selector {
+      grid-template-columns: repeat(2, 1fr);
+    }
   }
 
   .type-btn {
@@ -343,7 +349,7 @@
     flex-direction: column;
     align-items: center;
     gap: 4px;
-    padding: 8px;
+    padding: 8px 4px;
     background: #f8f9fa;
     border: 1px solid var(--border-color);
     color: var(--text-sub);
@@ -351,6 +357,8 @@
     font-weight: 600;
     transition: all 0.2s ease;
     margin-top: 0;
+    width: 100%;
+    box-sizing: border-box;
   }
 
   .type-btn.active {

@@ -30,7 +30,7 @@
 
 <div class="form-group">
   <label for="deviceSelect">Valitse laite</label>
-  <div style="display:flex; gap:8px;">
+  <div class="device-select-row">
     <select id="deviceSelect" bind:value={selectedDeviceId}>
       {#if devices.length === 0}
         <option value="">Ladataan laitteita...</option>
@@ -41,13 +41,64 @@
       {/if}
     </select>
     
-    {#if isMaster}
-      <button onclick={() => showRename = true} title="Nimeä uudelleen" style="width:48px; margin-top:0; padding:0; font-size:18px; display:flex; align-items:center; justify-content:center; background-color:var(--text-sub);">✏️</button>
-      <button onclick={() => showShare = true} title="Jaa käyttöoikeus" style="width:48px; margin-top:0; padding:0; font-size:20px; display:flex; align-items:center; justify-content:center; background-color:var(--text-sub);">👥</button>
-    {/if}
-    <button onclick={() => showClaim = true} title="Lisää uusi laite" style="width:48px; margin-top:0; padding:0; font-size:24px; display:flex; align-items:center; justify-content:center;">+</button>
+    <div class="device-actions">
+      {#if isMaster}
+        <button onclick={() => showRename = true} title="Nimeä uudelleen" class="action-btn secondary">✏️</button>
+        <button onclick={() => showShare = true} title="Jaa käyttöoikeus" class="action-btn secondary">👥</button>
+      {/if}
+      <button onclick={() => showClaim = true} title="Lisää uusi laite" class="action-btn primary">+</button>
+    </div>
   </div>
 </div>
+
+<style>
+  .device-select-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  @media (max-width: 400px) {
+    .device-select-row {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    
+    .device-actions {
+      justify-content: flex-end;
+    }
+  }
+
+  .device-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .action-btn {
+    width: 44px;
+    height: 44px;
+    margin-top: 0;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .action-btn.secondary {
+    background-color: var(--text-sub);
+    font-size: 18px;
+  }
+
+  .action-btn.primary {
+    font-size: 24px;
+  }
+
+  select {
+    flex: 1;
+    min-width: 0;
+  }
+</style>
 
 <div class="form-group">
   <label>Lähetä laitteille:</label>

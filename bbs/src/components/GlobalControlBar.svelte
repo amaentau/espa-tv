@@ -128,6 +128,44 @@
     justify-content: space-between;
     align-items: center;
     gap: 12px;
+    width: 100%;
+  }
+
+  @media (max-width: 440px) {
+    .bar-content {
+      gap: 6px;
+    }
+    
+    .device-select {
+      max-width: 70px;
+    }
+
+    .now-playing-label {
+      display: none;
+    }
+
+    .media-title {
+      font-size: 11px;
+    }
+
+    .device-selector-wrapper {
+      padding: 4px 6px;
+    }
+  }
+
+  @media (max-width: 360px) {
+    .device-status-section {
+      gap: 4px;
+    }
+    
+    .remote-controls button {
+      padding: 4px 5px;
+      font-size: 11px;
+    }
+
+    .bar-content {
+      gap: 4px;
+    }
   }
 
   .media-info {

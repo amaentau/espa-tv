@@ -7,7 +7,7 @@
   <h1 style="font-size:24px;">ESPA TV</h1>
 </header>
 
-<div class="user-info">
+<div class="user-info truncate" style="padding: 0 16px;">
   Kirjautuneena: <span>{email}</span>
   <span class="logout-btn" onclick={onLogout}>Kirjaudu ulos</span>
 </div>

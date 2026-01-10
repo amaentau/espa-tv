@@ -123,79 +123,202 @@
 </script>
 
 <div class="modal-backdrop" onclick={onClose}>
-  <div class="card" onclick={(e) => e.stopPropagation()} style="width:95%; max-width:600px; max-height:90vh; overflow-y:auto;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-      <h2 style="margin:0; color:var(--primary-color);">Järjestelmän hallinta</h2>
-      <button onclick={onClose} style="width:auto; margin:0; padding:4px 12px; background-color:var(--text-sub);">X</button>
+  <div class="card modal-content" onclick={(e) => e.stopPropagation()}>
+    <div class="modal-header">
+      <h2 style="margin:0; color:var(--primary-color);">Hallinta</h2>
+      <button onclick={onClose} class="close-btn">X</button>
     </div>
 
-    <div style="display:flex; gap:10px; margin-bottom:20px; border-bottom:1px solid var(--border-color); padding-bottom:10px;">
+    <div class="tabs-container">
       <button class="tab-btn {activeTab === 'coords' ? 'active' : ''}" onclick={() => activeTab = 'coords'}>Koordinaatit</button>
       <button class="tab-btn {activeTab === 'metadata' ? 'active' : ''}" onclick={() => activeTab = 'metadata'}>Metadata</button>
       <button class="tab-btn {activeTab === 'users' ? 'active' : ''}" onclick={() => activeTab = 'users'}>Käyttäjät</button>
     </div>
     
-    {#if activeTab === 'coords'}
-      <div>
-        <p style="font-size:13px; color:var(--text-sub);">Muokkaa Veo-soittimen klikkauskohtia eri resoluutioille.</p>
+    <div class="modal-body">
+      {#if activeTab === 'coords'}
         <div>
-          {#each Object.entries(coordsConfig) as [res, coords]}
-            <div style="border-bottom:1px solid #eee; padding-bottom:12px; margin-bottom:12px;">
-              <h3 style="margin-bottom:8px;">{res}p</h3>
-              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
-                <label>Play X <input type="number" bind:value={coords.play.x}></label>
-                <label>Play Y <input type="number" bind:value={coords.play.y}></label>
-                <label>Full X <input type="number" bind:value={coords.fullscreen.x}></label>
-                <label>Full Y <input type="number" bind:value={coords.fullscreen.y}></label>
+          <p class="tab-desc">Veo-soittimen klikkauskohdat.</p>
+          <div class="coords-list">
+            {#each Object.entries(coordsConfig) as [res, coords]}
+              <div class="coords-item">
+                <h3 class="res-title">{res}p</h3>
+                <div class="coords-grid">
+                  <label>Play X <input type="number" bind:value={coords.play.x}></label>
+                  <label>Play Y <input type="number" bind:value={coords.play.y}></label>
+                  <label>Full X <input type="number" bind:value={coords.fullscreen.x}></label>
+                  <label>Full Y <input type="number" bind:value={coords.fullscreen.y}></label>
+                </div>
               </div>
-            </div>
-          {/each}
+            {/each}
+          </div>
+          <button onclick={saveCoords} disabled={loading} style="margin-top:10px;">Tallenna koordinaatit</button>
         </div>
-        <button onclick={saveCoords} disabled={loading} style="margin-top:10px;">Tallenna koordinaatit</button>
-      </div>
-    {:else if activeTab === 'metadata'}
-      <div>
-        <h3 style="font-size:16px; margin-bottom:10px;">Peliryhmät ja Tapahtumatyypit</h3>
-        <div style="margin-bottom:20px;">
-          <label>Peliryhmät (pilkulla erotettuna)</label>
-          <textarea bind:value={adminGameGroups} style="width:100%; height:60px; padding:8px; border-radius:4px; border:1px solid var(--border-color);"></textarea>
+      {:else if activeTab === 'metadata'}
+        <div>
+          <h3 class="section-title">Peliryhmät ja Tapahtumatyypit</h3>
+          <div class="form-group">
+            <label>Peliryhmät (pilkulla erotettuna)</label>
+            <textarea bind:value={adminGameGroups}></textarea>
+          </div>
+          <div class="form-group">
+            <label>Tapahtumatyypit (pilkulla erotettuna)</label>
+            <textarea bind:value={adminEventTypes}></textarea>
+          </div>
+          <button onclick={saveMetadata}>Tallenna metadata</button>
         </div>
-        <div style="margin-bottom:20px;">
-          <label>Tapahtumatyypit (pilkulla erotettuna)</label>
-          <textarea bind:value={adminEventTypes} style="width:100%; height:60px; padding:8px; border-radius:4px; border:1px solid var(--border-color);"></textarea>
-        </div>
-        <button onclick={saveMetadata}>Tallenna metadata</button>
-      </div>
-    {:else if activeTab === 'users'}
-      <div>
-        <h3 style="font-size:16px; margin-bottom:10px;">Käyttäjähallinta</h3>
-        <div style="max-height:300px; overflow-y:auto; border:1px solid var(--border-color); border-radius:4px;">
-          {#each usersList as u}
-            <div style="padding:10px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
-              <div style="font-size:13px;">
-                <strong>{u.email}</strong><br>
-                <span style="font-size:11px; color:#666;">{u.isAdmin ? 'Super Admin' : (u.userGroup || 'Ei ryhmää')}</span>
+      {:else if activeTab === 'users'}
+        <div>
+          <h3 class="section-title">Käyttäjähallinta</h3>
+          <div class="users-list">
+            {#each usersList as u}
+              <div class="user-item">
+                <div class="user-info-text">
+                  <strong>{u.email}</strong>
+                  <span class="user-role">{u.isAdmin ? 'Super Admin' : (u.userGroup || 'Ei ryhmää')}</span>
+                </div>
+                <div class="user-actions">
+                  <select 
+                    onchange={(e) => updateUserRole(u, e.target.value)}
+                    disabled={u.email === userEmail}
+                  >
+                    <option value="" selected={!u.userGroup && !u.isAdmin}>Ei ryhmää</option>
+                    <option value="Veo Ylläpitäjä" selected={u.userGroup === 'Veo Ylläpitäjä'}>Veo Ylläpitäjä</option>
+                    <option value="ADMIN" selected={u.isAdmin}>Super Admin</option>
+                  </select>
+                </div>
               </div>
-              <div style="display:flex; gap:5px;">
-                <select 
-                  onchange={(e) => updateUserRole(u, e.target.value)}
-                  style="font-size:12px; padding:2px;" 
-                  disabled={u.email === userEmail}
-                >
-                  <option value="" selected={!u.userGroup && !u.isAdmin}>Ei ryhmää</option>
-                  <option value="Veo Ylläpitäjä" selected={u.userGroup === 'Veo Ylläpitäjä'}>Veo Ylläpitäjä</option>
-                  <option value="ADMIN" selected={u.isAdmin}>Super Admin</option>
-                </select>
-              </div>
-            </div>
-          {/each}
+            {/each}
+          </div>
         </div>
-      </div>
-    {/if}
+      {/if}
+    </div>
 
     {#if status.msg}
       <div class="status-msg {status.type}">{status.msg}</div>
     {/if}
   </div>
 </div>
+
+<style>
+  .modal-content {
+    width: 95%;
+    max-width: 600px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+
+  .close-btn {
+    width: auto;
+    margin: 0;
+    padding: 6px 12px;
+    background-color: var(--text-sub);
+    font-size: 14px;
+  }
+
+  .tabs-container {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border-color);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tabs-container::-webkit-scrollbar { display: none; }
+
+  .modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+
+  .tab-desc {
+    font-size: 13px;
+    color: var(--text-sub);
+    margin-bottom: 16px;
+  }
+
+  .coords-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  @media (max-width: 400px) {
+    .coords-grid {
+      grid-template-columns: 1fr;
+    }
+    
+    .modal-content {
+      padding: 15px;
+    }
+  }
+
+  .coords-item {
+    border-bottom: 1px solid #eee;
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+  }
+
+  .res-title {
+    margin-bottom: 8px;
+    font-size: 16px;
+  }
+
+  .section-title {
+    font-size: 16px;
+    margin-bottom: 10px;
+  }
+
+  .users-list {
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+  }
+
+  .user-item {
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .user-info-text {
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  
+  .user-info-text strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .user-role {
+    font-size: 11px;
+    color: #666;
+  }
+
+  .user-actions select {
+    font-size: 12px;
+    padding: 4px;
+  }
+
+  textarea {
+    width: 100%;
+    height: 80px;
+  }
+</style>
 
