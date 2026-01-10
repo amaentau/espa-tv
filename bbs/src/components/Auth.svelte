@@ -1,4 +1,7 @@
 <script>
+  import { fade, fly } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
+
   let { onLoginSuccess } = $props();
 
   let email = $state('');
@@ -9,14 +12,37 @@
   let currentStep = $state('lookup'); // lookup, otp, setPin, login
   let status = $state({ msg: '', type: '' });
   let loading = $state(false);
+  let shaking = $state(false);
+
+  // Auto-focus logic
+  $effect(() => {
+    if (currentStep) {
+      setTimeout(() => {
+        const firstInput = document.querySelector('.card input:not([type="hidden"])');
+        if (firstInput) firstInput.focus();
+      }, 300); // Wait for transition
+    }
+  });
 
   const setStatus = (msg, type = 'error') => {
     status = { msg, type };
+    if (type === 'error') {
+      shaking = true;
+      setTimeout(() => shaking = false, 500);
+    }
+  };
+
+  const validateEmail = (email) => {
+    return String(email)
+      .toLowerCase()
+      .match(
+        /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
+      );
   };
 
   async function handleLookup() {
-    if (!email || !email.includes('@')) {
-      return setStatus('Anna kelvollinen sähköposti');
+    if (!validateEmail(email)) {
+      return setStatus('Anna kelvollinen sähköpostiosoite');
     }
     loading = true;
     setStatus('Tarkistetaan...', 'info');
@@ -118,13 +144,122 @@
   }
 </script>
 
-<div class="container fade-in">
-  <header class="auth-header">
+<div class="container" in:fade={{ duration: 800 }}>
+  <header class="auth-header" in:fly={{ y: -20, duration: 1000, delay: 200, easing: cubicOut }}>
     <img src="/logo.png" alt="EsPa Logo" class="auth-logo">
-    <h1 class="brand-name">ESPA <span class="brand-accent">TV</span></h1>
   </header>
 
+  <div class="card {shaking ? 'shake' : ''}" class:loading-overlay={loading}>
+    {#if currentStep === 'lookup'}
+      <div in:fly={{ x: 20, duration: 400, delay: 200 }} out:fly={{ x: -20, duration: 200 }}>
+        <div class="form-group floating">
+          <input id="authEmail" type="email" bind:value={email} placeholder=" " required>
+          <label for="authEmail">Sähköposti</label>
+          <p class="help-text">Aloita käyttö tai kirjaudu sähköpostiosoitteella</p>
+        </div>
+        <button onclick={handleLookup} disabled={loading} class="primary-btn">
+          {#if loading}
+            <span class="spinner"></span>
+          {:else}
+            Jatka
+          {/if}
+        </button>
+      </div>
+
+    {:else if currentStep === 'otp'}
+      <div in:fly={{ x: 20, duration: 400, delay: 200 }} out:fly={{ x: -20, duration: 200 }}>
+        <p class="step-info">
+          Lähetimme vahvistuskoodin osoitteeseen <strong>{email}</strong>
+        </p>
+        <div class="form-group floating">
+          <input id="authOtp" type="text" class="pin-input" bind:value={otp} placeholder=" " maxlength="6" required>
+          <label for="authOtp">Vahvistuskoodi (6 numeroa)</label>
+        </div>
+        <button onclick={handleVerifyOtp} disabled={loading} class="primary-btn">
+          {#if loading}
+            <span class="spinner"></span>
+          {:else}
+            Vahvista
+          {/if}
+        </button>
+        <button class="link-btn" onclick={() => { currentStep = 'lookup'; setStatus(''); }}>Vaihda sähköposti</button>
+      </div>
+
+    {:else if currentStep === 'setPin'}
+      <div in:fly={{ x: 20, duration: 400, delay: 200 }} out:fly={{ x: -20, duration: 200 }}>
+        <p class="step-info">Luo uusi 4-numeroinen PIN-koodi.</p>
+        <div class="form-group floating">
+          <input id="authUsername" type="text" bind:value={username} placeholder=" " minlength="3" required>
+          <label for="authUsername">Käyttäjänimi</label>
+        </div>
+        <div class="form-group floating">
+          <input id="authSetPin" type="password" class="pin-input" bind:value={pin} placeholder=" " maxlength="4" required>
+          <label for="authSetPin">Uusi PIN</label>
+        </div>
+        <button onclick={handleSetPin} disabled={loading} class="primary-btn">
+          {#if loading}
+            <span class="spinner"></span>
+          {:else}
+            Tallenna ja kirjaudu
+          {/if}
+        </button>
+      </div>
+
+    {:else if currentStep === 'login'}
+      <div in:fly={{ x: 20, duration: 400, delay: 200 }} out:fly={{ x: -20, duration: 200 }}>
+        <p class="step-info">Tervetuloa takaisin, <strong>{email}</strong></p>
+        <div class="form-group floating">
+          <input id="authLoginPin" type="password" class="pin-input" bind:value={pin} placeholder=" " maxlength="4" required>
+          <label for="authLoginPin">Syötä PIN-koodi</label>
+        </div>
+        <button onclick={handleLogin} disabled={loading} class="primary-btn">
+          {#if loading}
+            <span class="spinner"></span>
+          {:else}
+            Kirjaudu
+          {/if}
+        </button>
+        <div class="btn-group">
+          <button class="link-btn" onclick={sendOtp}>Unohdin PIN-koodin</button>
+          <button class="link-btn" onclick={() => { currentStep = 'lookup'; setStatus(''); }}>Vaihda käyttäjää</button>
+        </div>
+      </div>
+    {/if}
+
+    {#if status.msg}
+      <div class="status-msg {status.type}" aria-live="polite">
+        {status.msg}
+      </div>
+    {/if}
+  </div>
+</div>
+
 <style>
+  .container {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Glassmorphism Card */
+  .card {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+  }
+
+  .card.loading-overlay::after {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255, 255, 255, 0.3);
+    pointer-events: none;
+    z-index: 10;
+  }
+
   .auth-header {
     text-align: center;
     margin-bottom: 32px;
@@ -135,80 +270,159 @@
   }
 
   .auth-logo {
-    height: 100px;
+    height: 180px;
     width: auto;
     object-fit: contain;
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.1));
   }
 
-  .brand-name {
-    font-size: 36px;
-    font-weight: 900;
-    letter-spacing: -1px;
+  .step-info {
+    text-align: center;
+    margin-bottom: 24px;
+    color: var(--text-main);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  /* Floating Labels */
+  .form-group.floating {
+    position: relative;
+    margin-bottom: 24px;
+  }
+
+  .form-group.floating input {
+    height: 56px;
+    padding: 20px 16px 6px;
+    background: rgba(255, 255, 255, 0.5);
+    border: 1.5px solid rgba(0, 0, 0, 0.08);
+    font-size: 16px;
+  }
+
+  .form-group.floating label {
+    position: absolute;
+    top: 18px;
+    left: 16px;
+    font-size: 16px;
+    color: var(--text-sub);
+    pointer-events: none;
+    transition: all 0.2s ease;
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: 400;
+  }
+
+  .form-group.floating input:focus ~ label,
+  .form-group.floating input:not(:placeholder-shown) ~ label {
+    top: 8px;
+    left: 16px;
+    font-size: 12px;
+    font-weight: 700;
     color: var(--primary-color);
-    text-transform: uppercase;
-    margin: 0;
   }
 
-  .brand-accent {
-    color: var(--accent-color);
-    text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  .form-group.floating input:focus {
+    background: #fff;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 4px rgba(21, 112, 57, 0.1);
+  }
+
+  .help-text {
+    font-size: 12px;
+    color: var(--text-sub);
+    margin-top: 6px;
+    margin-left: 4px;
+    opacity: 0.8;
+  }
+
+  /* Primary Button Enhancements */
+  .primary-btn {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+  }
+
+  .primary-btn:active {
+    transform: scale(0.98);
+  }
+
+  .spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top: 2px solid #fff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Shake Animation */
+  .shake {
+    animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+  }
+
+  @keyframes shake {
+    10%, 90% { transform: translate3d(-1px, 0, 0); }
+    20%, 80% { transform: translate3d(2px, 0, 0); }
+    30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+    40%, 60% { transform: translate3d(4px, 0, 0); }
+  }
+
+  .btn-group {
+    display: flex;
+    flex-direction: column;
+    margin-top: 12px;
+  }
+
+  .status-msg {
+    margin-top: 16px;
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .status-msg.error {
+    background: rgba(209, 52, 56, 0.1);
+    color: #d13438;
+  }
+
+  .status-msg.info {
+    background: rgba(21, 112, 57, 0.1);
+    color: var(--primary-color);
   }
 </style>
 
-  <div class="card">
-    {#if currentStep === 'lookup'}
-      <div>
-        <div class="form-group">
-          <label for="authEmail">Sähköposti</label>
-          <input id="authEmail" type="email" bind:value={email} placeholder="nimi@espa.fi" autofocus>
-        </div>
-        <button onclick={handleLookup} disabled={loading}>Jatka</button>
-      </div>
+<div class="bg-animation"></div>
 
-    {:else}
-      <p style="text-align:center; margin-bottom:16px;">
-        {#if currentStep === 'otp'}
-          Lähetimme vahvistuskoodin osoitteeseen <strong>{email}</strong>
-        {:else if currentStep === 'login'}
-          Tervetuloa takaisin, <strong>{email}</strong>
-        {:else if currentStep === 'setPin'}
-          Luo uusi 4-numeroinen PIN-koodi.
-        {/if}
-      </p>
+<style>
+  :global(body) {
+    overflow: hidden;
+  }
 
-      {#if currentStep === 'otp'}
-        <div class="form-group">
-          <label for="authOtp">Vahvistuskoodi (6 numeroa)</label>
-          <input id="authOtp" type="text" class="pin-input" bind:value={otp} placeholder="123456" maxlength="6">
-        </div>
-        <button onclick={handleVerifyOtp} disabled={loading}>Vahvista</button>
-        <button class="link-btn" onclick={() => currentStep = 'lookup'}>Vaihda sähköposti</button>
+  .bg-animation {
+    position: fixed;
+    top: -50%;
+    left: -50%;
+    right: -50%;
+    bottom: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at 50% 50%, rgba(21, 112, 57, 0.05), transparent 40%),
+                radial-gradient(circle at 20% 80%, rgba(252, 227, 84, 0.05), transparent 40%);
+    animation: aurora 20s linear infinite;
+    z-index: 0;
+    pointer-events: none;
+  }
 
-      {:else if currentStep === 'setPin'}
-        <div class="form-group">
-          <label for="authUsername">Käyttäjänimi</label>
-          <input id="authUsername" type="text" bind:value={username} placeholder="nimimerkki" minlength="3">
-        </div>
-        <div class="form-group">
-          <label for="authSetPin">Uusi PIN</label>
-          <input id="authSetPin" type="password" class="pin-input" bind:value={pin} placeholder="****" maxlength="4">
-        </div>
-        <button onclick={handleSetPin} disabled={loading}>Tallenna ja kirjaudu</button>
-
-      {:else if currentStep === 'login'}
-        <div class="form-group">
-          <label for="authLoginPin">Syötä PIN-koodi</label>
-          <input id="authLoginPin" type="password" class="pin-input" bind:value={pin} placeholder="****" maxlength="4" autofocus>
-        </div>
-        <button onclick={handleLogin} disabled={loading}>Kirjaudu</button>
-        <button class="link-btn" onclick={sendOtp}>Unohdin PIN-koodin</button>
-        <button class="link-btn" onclick={() => currentStep = 'lookup'}>Vaihda käyttäjää</button>
-      {/if}
-    {/if}
-
-    {#if status.msg}
-      <div class="status-msg {status.type}">{status.msg}</div>
-    {/if}
-  </div>
-</div>
+  @keyframes aurora {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+</style>
 
