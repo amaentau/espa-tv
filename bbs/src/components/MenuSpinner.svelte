@@ -3,32 +3,39 @@
 
   const menuItems = [
     { 
-      id: 'settings', 
-      label: 'Asetukset', 
-      img: '/images/menu/settings.png', 
-      imgBW: '/images/menu/settings.png', // Fallback
-      roles: [] // Everyone
-    },
-    { 
       id: 'tv', 
       label: 'Espa TV', 
-      img: '/images/menu/tv_large.png', 
-      imgBW: '/images/menu/tv_large.png', // Fallback
-      roles: [] // Everyone
-    },
-    { 
-      id: 'producer', 
-      label: 'Tuotanto', 
-      img: '/images/menu/producer_large.png', 
-      imgBW: '/images/menu/producer_large_BW.png',
-      roles: ['ADMIN', 'Veo Ylläpitäjä'] 
+      img: '/images/menu/tv_small.png', 
+      imgBW: '/images/menu/tv_small.png', 
+      roles: [] 
     },
     { 
       id: 'music', 
       label: 'Musiikki', 
-      img: '/images/menu/music_large.png', 
-      imgBW: '/images/menu/music_large.png', // Fallback
-      roles: [] // Everyone
+      img: '/images/menu/music_small.png', 
+      imgBW: '/images/menu/music_small.png', 
+      roles: [] 
+    },
+    { 
+      id: 'videot', 
+      label: 'Videot', 
+      img: '/images/menu/highlights_small.png', 
+      imgBW: '/images/menu/highlights_small.png', 
+      roles: [] 
+    },
+    { 
+      id: 'settings', 
+      label: 'Asetukset', 
+      img: '/images/menu/settings_small.png', 
+      imgBW: '/images/menu/settings_small.png', 
+      roles: [] 
+    },
+    { 
+      id: 'producer', 
+      label: 'Tuotanto', 
+      img: '/images/menu/producer_small.png', 
+      imgBW: '/images/menu/producer_small_BW.png',
+      roles: ['ADMIN', 'Veo Ylläpitäjä'] 
     }
   ];
 

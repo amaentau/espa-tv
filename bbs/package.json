@@ -14,14 +14,13 @@
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^4.0.0",
     "svelte": "^5.0.0",
-    "vite": "^5.0.0"
+    "vite": "~5.4.11"
   },
   "dependencies": {
     "@azure/arm-iothub": "^6.2.0",
     "@azure/data-tables": "^13.3.0",
     "@azure/identity": "^4.5.0",
     "@azure/storage-blob": "^12.26.0",
-    "@rollup/rollup-linux-x64-gnu": "^4.55.1",
     "azure-iot-common": "^1.12.2",
     "azure-iot-device": "^1.18.2",
     "azure-iot-device-mqtt": "^1.16.3",

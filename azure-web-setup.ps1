@@ -70,6 +70,7 @@ az webapp config appsettings set `
     IOT_HUB_RESOURCE_GROUP="$RG" `
     IOT_HUB_SUBSCRIPTION_ID="$SUBSCRIPTION_ID" `
     SCM_DO_BUILD_DURING_DEPLOYMENT=true `
+    NPM_CONFIG_LEGACY_PEER_DEPS=true `
     SCM_COMMAND_IDLE_TIMEOUT=600
 
 # 8. Save local config

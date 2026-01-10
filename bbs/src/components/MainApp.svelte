@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { deviceState, refreshDevices } from '../lib/deviceState.svelte.js';
   import Header from './Header.svelte';
   import MenuSpinner from './MenuSpinner.svelte';
   import ProducerView from './ProducerView.svelte';
@@ -7,11 +8,10 @@
   import MusicView from './MusicView.svelte';
   import SettingsView from './SettingsView.svelte';
   import AdminModal from './modals/AdminModal.svelte';
+  import GlobalControlBar from './GlobalControlBar.svelte';
 
   let { authState, onLogout } = $props();
   
-  let devices = $state([]);
-  let selectedDeviceId = $state('');
   let targetDeviceIds = $state([]);
   let metadata = $state({ gameGroups: [], eventTypes: [] });
   let showAdminModal = $state(false);
@@ -27,29 +27,24 @@
     }
   }
 
-  async function loadDevices() {
-    try {
-      const res = await fetch('/devices', {
-        headers: { 'Authorization': `Bearer ${authState.token}` }
-      });
-      if (res.status === 401 || res.status === 403) { onLogout(); return; }
-      devices = await res.json();
-      if (devices.length > 0 && !selectedDeviceId) {
-        selectedDeviceId = devices[0].id;
-        targetDeviceIds = [selectedDeviceId];
-      }
-    } catch (err) {
-      console.error('Failed to load devices:', err);
-    }
-  }
-
   onMount(() => {
+    deviceState.token = authState.token;
     loadMetadata();
-    loadDevices();
+    refreshDevices();
+    
+    // Periodically refresh device status
+    const interval = setInterval(refreshDevices, 10000);
+    return () => clearInterval(interval);
+  });
+
+  $effect(() => {
+    if (deviceState.devices.length > 0 && targetDeviceIds.length === 0) {
+      targetDeviceIds = [deviceState.devices[0].id];
+    }
   });
 
   const refreshHistory = () => historyRefreshTrigger++;
-  const onDevicesChanged = () => loadDevices();
+  const onDevicesChanged = () => refreshDevices();
 </script>
 
 <div class="app-layout fade-in">
@@ -74,9 +69,9 @@
       <ProducerView 
         {authState} 
         {onLogout} 
-        {devices} 
-        bind:selectedDeviceId 
-        bind:targetDeviceIds 
+        devices={deviceState.devices} 
+        bind:selectedDeviceId={deviceState.activeDeviceId}
+        bind:targetDeviceIds={targetDeviceIds}
         {metadata}
         {onDevicesChanged}
         {historyRefreshTrigger}
@@ -89,20 +84,21 @@
         onOpenAdmin={() => showAdminModal = true}
       />
     {:else if activeView === 'tv'}
+      <div class="empty-state">Espa TV Live -tulossa pian.</div>
+    {:else if activeView === 'videot'}
       <EspaTvView 
         {authState} 
-        {devices} 
-        bind:selectedDeviceId 
+        devices={deviceState.devices} 
         token={authState.token}
       />
     {:else if activeView === 'music'}
       <MusicView 
-        {devices} 
-        bind:selectedDeviceId 
         token={authState.token}
       />
     {/if}
   </div>
+
+  <GlobalControlBar />
 </div>
 
 {#if showAdminModal}

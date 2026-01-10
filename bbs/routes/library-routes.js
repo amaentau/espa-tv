@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const { getTableClient, TABLE_NAME_LIBRARY } = require('../services/storage-service');
-const { listMusicBlobs, uploadMusicBlob } = require('../services/blob-service');
+const { listBlobs, uploadBlob } = require('../services/blob-service');
 const { authenticateToken } = require('../middleware/auth');
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -36,26 +36,28 @@ router.get('/:type', authenticateToken, async (req, res) => {
   }
 });
 
-// 1b. GET /library/blob/music - Fetch content from Azure Blob Storage
-router.get('/blob/music', authenticateToken, async (req, res) => {
+// 1b. GET /library/blob/:type - Fetch content from Azure Blob Storage (music or video)
+router.get('/blob/:type', authenticateToken, async (req, res) => {
   try {
-    const blobs = await listMusicBlobs();
+    const { type } = req.params;
+    const blobs = await listBlobs(type);
     return res.json(blobs);
   } catch (err) {
-    console.error('GET /library/blob/music error:', err);
-    return res.status(500).json({ error: 'Failed to fetch music from blob storage' });
+    console.error('GET /library/blob/:type error:', err);
+    return res.status(500).json({ error: 'Failed to fetch blobs from storage' });
   }
 });
 
-// 2b. POST /library/blob/upload - Upload file to Azure Blob Storage
-router.post('/blob/upload', authenticateToken, upload.single('file'), async (req, res) => {
+// 2b. POST /library/blob/upload/:type - Upload file to Azure Blob Storage
+router.post('/blob/upload/:type', authenticateToken, upload.single('file'), async (req, res) => {
   try {
+    const { type } = req.params;
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
     const { originalname, buffer, mimetype } = req.file;
-    await uploadMusicBlob(originalname, buffer, mimetype, req.user.email);
+    await uploadBlob(originalname, buffer, mimetype, req.user.email, type);
 
     return res.status(201).json({ ok: true, filename: originalname });
   } catch (err) {

@@ -16,6 +16,17 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+// Set Cache-Control for development/debugging
+app.use((req, res, next) => {
+  console.log(`[DEBUG] Request: ${req.url}`);
+  if (req.url.endsWith('.js') || req.url.endsWith('.html')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  next();
+});
+
 // Serve static files from the Svelte build output
 const distPath = path.join(__dirname, 'dist');
 const publicPath = path.join(__dirname, 'public');

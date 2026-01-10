@@ -127,8 +127,8 @@ class PlayerController {
     const startTime = Date.now();
     console.log(`🎬 Going to stream: ${streamUrl} (Boot: ${isInitialBoot})`);
     
-    // Check if this is a direct media link (.mp3, .mp4, .png, etc.)
-    const isDirectMedia = /\.(mp3|mp4|wav|ogg|png|jpg|jpeg|gif|webp)|download=1|download\?/.test(streamUrl.toLowerCase());
+    // Check if this is a direct media link (.mp3, .mp4, .m4a, .webm, .opus, etc.)
+    const isDirectMedia = /\.(mp3|mp4|m4a|webm|opus|wav|ogg|png|jpg|jpeg|gif|webp)|download=1|download\?/.test(streamUrl.toLowerCase());
 
     await this.page.goto(streamUrl, { 
       waitUntil: isDirectMedia ? 'domcontentloaded' : (isInitialBoot ? 'networkidle2' : 'domcontentloaded'), 

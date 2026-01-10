@@ -43,68 +43,95 @@ async function getUserDelegationKey() {
 }
 
 /**
- * Lists blobs in the music container and generates a SAS token for each.
+ * Lists blobs in a container and generates a SAS token for each.
  */
-async function listMusicBlobs() {
-  const client = getBlobServiceClient();
-  const containerClient = client.getContainerClient(containerName);
-  const delegationKey = await getUserDelegationKey();
-
-  const blobs = [];
-  const now = new Date();
-  const expiryTime = new Date(now.getTime() + 2 * 60 * 60 * 1000); // 2 hours expiry for individual links
-
-  for await (const blob of containerClient.listBlobsFlat()) {
-    const blobClient = containerClient.getBlobClient(blob.name);
+async function listBlobs(type = 'music') {
+  try {
+    const containerName = type.toLowerCase() === 'video' ? 'video' : 'music';
+    const client = getBlobServiceClient();
+    const containerClient = client.getContainerClient(containerName);
     
-    const sasOptions = {
-      containerName,
-      blobName: blob.name,
-      permissions: BlobSASPermissions.parse("r"), // Read only
-      protocol: SASProtocol.HttpsAndHttp,
-      startsOn: now,
-      expiresOn: expiryTime,
-    };
+    // Ensure container exists
+    await containerClient.createIfNotExists();
 
-    const sasToken = generateBlobSASQueryParameters(
-      sasOptions,
-      delegationKey,
-      accountName
-    ).toString();
+    const delegationKey = await getUserDelegationKey();
 
-    blobs.push({
-      rowKey: `blob-${blob.name}`, // Compatible with track object
-      title: blob.name,           // Use filename as title
-      url: `${blobClient.url}?${sasToken}`,
-      creatorEmail: 'System (Blob Storage)',
-      timestamp: blob.properties.lastModified
-    });
+    const blobs = [];
+    const now = new Date();
+    // SUBTRACT 15 minutes for clock skew to avoid "SAS not yet valid" errors
+    const startTime = new Date(now.getTime() - 15 * 60 * 1000);
+    const expiryTime = new Date(now.getTime() + 2 * 60 * 60 * 1000); // 2 hours expiry for individual links
+
+    for await (const blob of containerClient.listBlobsFlat()) {
+      const blobClient = containerClient.getBlobClient(blob.name);
+      
+      const sasOptions = {
+        containerName,
+        blobName: blob.name,
+        permissions: BlobSASPermissions.parse("r"), // Read only
+        protocol: SASProtocol.HttpsAndHttp,
+        startsOn: startTime,
+        expiresOn: expiryTime,
+      };
+
+      const sasToken = generateBlobSASQueryParameters(
+        sasOptions,
+        delegationKey,
+        accountName
+      ).toString();
+
+      blobs.push({
+        rowKey: `blob-${blob.name}`, // Compatible with track object
+        title: blob.name,           // Use filename as title
+        url: `${blobClient.url}?${sasToken}`,
+        creatorEmail: 'System (Blob Storage)',
+        timestamp: blob.properties.lastModified,
+        type: containerName.toUpperCase() === 'VIDEO' ? 'VIDEO' : 'SONG'
+      });
+    }
+
+    return blobs;
+  } catch (err) {
+    console.error('Detailed Blob Listing Error:', err.message);
+    if (err.statusCode === 403) {
+      console.error('AUTH ERROR: Identity does not have "Storage Blob Data Contributor" role.');
+    }
+    throw err;
   }
-
-  return blobs;
 }
 
 /**
- * Uploads a file to the music container.
+ * Uploads a file to a container.
  */
-async function uploadMusicBlob(fileName, buffer, contentType, creatorEmail) {
-  const client = getBlobServiceClient();
-  const containerClient = client.getContainerClient(containerName);
-  const blockBlobClient = containerClient.getBlockBlobClient(fileName);
+async function uploadBlob(fileName, buffer, contentType, creatorEmail, type = 'music') {
+  try {
+    const containerName = type.toLowerCase() === 'video' ? 'video' : 'music';
+    const client = getBlobServiceClient();
+    const containerClient = client.getContainerClient(containerName);
+    
+    // Ensure container exists
+    await containerClient.createIfNotExists();
+    
+    const blockBlobClient = containerClient.getBlockBlobClient(fileName);
 
-  await blockBlobClient.uploadData(buffer, {
-    blobHTTPHeaders: { blobContentType: contentType },
-    metadata: {
-      creatorEmail: creatorEmail,
-      uploadedAt: new Date().toISOString()
-    }
-  });
+    await blockBlobClient.uploadData(buffer, {
+      blobHTTPHeaders: { blobContentType: contentType },
+      metadata: {
+        creatorEmail: creatorEmail,
+        uploadedAt: new Date().toISOString(),
+        category: type.toUpperCase()
+      }
+    });
 
-  return blockBlobClient.url;
+    return blockBlobClient.url;
+  } catch (err) {
+    console.error('Detailed Blob Upload Error:', err.message);
+    throw err;
+  }
 }
 
 module.exports = {
-  listMusicBlobs,
-  uploadMusicBlob
+  listBlobs,
+  uploadBlob
 };
 

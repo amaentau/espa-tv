@@ -1,58 +1,17 @@
 <script>
-  let { deviceId, token } = $props();
+  import { deviceState, sendCommand, refreshDevices } from '../lib/deviceState.svelte.js';
+  let { token } = $props();
 
-  let iotStatus = $state({ connectionState: '', loading: true, error: false, notRegistered: false, mock: false });
   let statusMsg = $state({ msg: '', type: '' });
   let commandLoading = $state(false);
 
-  async function loadIotStatus() {
-    if (!deviceId) return;
-    iotStatus.loading = true;
-    iotStatus.error = false;
-    iotStatus.notRegistered = false;
-
-    try {
-      const res = await fetch(`/devices/${encodeURIComponent(deviceId)}/iot-status`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (res.status === 404) {
-        iotStatus.notRegistered = true;
-        return;
-      }
-      if (!res.ok) throw new Error();
-
-      const data = await res.json();
-      iotStatus.connectionState = data.connectionState;
-      iotStatus.mock = data.mock;
-    } catch (err) {
-      iotStatus.error = true;
-    } finally {
-      iotStatus.loading = false;
-    }
-  }
-
-  $effect(() => {
-    if (deviceId) loadIotStatus();
-  });
-
-  async function sendCommand(command, payload = {}) {
+  async function handleCommand(command, payload = {}) {
     commandLoading = true;
     statusMsg = { msg: 'Suoritetaan laitteella...', type: 'info' };
 
     try {
-      const res = await fetch(`/devices/${encodeURIComponent(deviceId)}/commands/${command}`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(payload)
-      });
+      const data = await sendCommand(command, payload);
       
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Virhe');
-
       if (data.mode === 'direct') {
         statusMsg = { msg: `✅ Suoritettu välittömästi (Status: ${data.methodStatus})`, type: 'success' };
       } else {
@@ -67,15 +26,16 @@
   }
 
   async function registerIot() {
+    if (!deviceState.activeDeviceId) return;
     statusMsg = { msg: 'Rekisteröidään laitetta IoT Hubiin...', type: 'info' };
     try {
-      const res = await fetch(`/devices/${encodeURIComponent(deviceId)}/register-iot`, {
+      const res = await fetch(`/devices/${encodeURIComponent(deviceState.activeDeviceId)}/register-iot`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Virhe');
       statusMsg = { msg: 'Laite rekisteröity onnistuneesti!', type: 'success' };
-      loadIotStatus();
+      refreshDevices();
     } catch (err) {
       statusMsg = { msg: err.message, type: 'error' };
     }
@@ -85,25 +45,29 @@
 <div class="card">
   <h3 style="margin-top:0; color:var(--primary-color); display:flex; justify-content:space-between; align-items:center;">
     IoT Ohjaimet
-    <span style="font-size:12px; padding:2px 8px; border-radius:10px; background:{iotStatus.loading ? '#eee' : (iotStatus.connectionState === 'Connected' ? '#d4edda' : '#f8d7da')}; color:{iotStatus.loading ? '#666' : (iotStatus.connectionState === 'Connected' ? '#155724' : '#721c24')}; font-weight:normal;">
-      {#if iotStatus.loading}Ladataan...{:else if iotStatus.notRegistered}Ei rekisteröity{:else}{iotStatus.connectionState}{iotStatus.mock ? ' (MOCK)' : ''}{/if}
-    </span>
+    {#if deviceState.activeDevice}
+      <span style="font-size:12px; padding:2px 8px; border-radius:10px; background:{deviceState.activeDevice.iotStatus === 'Connected' ? '#d4edda' : '#f8d7da'}; color:{deviceState.activeDevice.iotStatus === 'Connected' ? '#155724' : '#721c24'}; font-weight:normal;">
+        {deviceState.activeDevice.iotStatus}
+      </span>
+    {/if}
   </h3>
 
-  {#if iotStatus.notRegistered}
+  {#if !deviceState.activeDeviceId}
+    <p style="text-align:center; font-size:14px; color:var(--text-sub);">Valitse laite yläpuolelta tai Hallinta-sivulta.</p>
+  {:else if deviceState.activeDevice?.iotStatus === 'NotRegistered'}
     <div style="text-align:center; padding:10px 0;">
       <p style="font-size:14px; color:var(--text-sub); margin-bottom:12px;">Laitetta ei ole rekisteröity IoT Hubiin.</p>
       <button onclick={registerIot} style="width:auto; padding:8px 16px;">Aktivoi IoT-ohjaus</button>
     </div>
-  {:else if !iotStatus.loading && !iotStatus.error}
+  {:else}
     <div>
       <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:12px;">
-        <button onclick={() => sendCommand('play')} disabled={commandLoading} style="background-color:var(--primary-color); padding: 10px 5px;">▶️ Toista</button>
-        <button onclick={() => sendCommand('pause')} disabled={commandLoading} style="background-color:var(--text-sub); padding: 10px 5px;">⏸️ Tauko</button>
-        <button onclick={() => sendCommand('fullscreen')} disabled={commandLoading} style="background-color:var(--text-sub); padding: 10px 5px;">📺 Koko näyttö</button>
-        <button onclick={() => { if(confirm('Haluatko varmasti käynnistää laitteen uudelleen?')) sendCommand('restart'); }} disabled={commandLoading} style="background-color:#d13438; padding: 10px 5px;">🔄 Restart Pi</button>
+        <button onclick={() => handleCommand('play')} disabled={commandLoading} style="background-color:var(--primary-color); padding: 10px 5px;">▶️ Toista</button>
+        <button onclick={() => handleCommand('pause')} disabled={commandLoading} style="background-color:var(--text-sub); padding: 10px 5px;">⏸️ Tauko</button>
+        <button onclick={() => handleCommand('fullscreen')} disabled={commandLoading} style="background-color:var(--text-sub); padding: 10px 5px;">📺 Koko näyttö</button>
+        <button onclick={() => { if(confirm('Haluatko varmasti käynnistää laitteen uudelleen?')) handleCommand('restart'); }} disabled={commandLoading} style="background-color:#d13438; padding: 10px 5px;">🔄 Restart Pi</button>
       </div>
-      <button class="link-btn" onclick={loadIotStatus} style="text-align:left; padding:4px 0; margin:0;">Päivitä laitteen tila</button>
+      <button class="link-btn" onclick={refreshDevices} style="text-align:left; padding:4px 0; margin:0;">Päivitä laitteiden tila</button>
     </div>
   {/if}
 

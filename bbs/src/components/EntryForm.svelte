@@ -142,8 +142,21 @@
     const file = files[0];
     
     // Check if it's an audio file for the song type
-    if (contentType === 'song' && !file.type.startsWith('audio/')) {
-      return setStatus('Vain äänitiedostot ovat sallittuja tässä.', 'error');
+    if (contentType === 'song') {
+      const isAudio = file.type.startsWith('audio/');
+      const isWebm = file.type.includes('webm') || file.name.toLowerCase().endsWith('.webm');
+      const isM4a = file.name.toLowerCase().endsWith('.m4a');
+      const isMp3 = file.name.toLowerCase().endsWith('.mp3');
+      const isOpus = file.name.toLowerCase().endsWith('.opus');
+      
+      if (!isAudio && !isWebm && !isM4a && !isMp3 && !isOpus) {
+        console.log('File type check failed:', {
+          name: file.name,
+          type: file.type,
+          isAudio, isWebm, isM4a, isMp3, isOpus
+        });
+        return setStatus('Vain äänitiedostot (mp3, m4a, webm, opus) ovat sallittuja.', 'error');
+      }
     }
 
     loading = true;
@@ -153,7 +166,7 @@
     formData.append('file', file);
 
     try {
-      const res = await fetch('/library/blob/upload', {
+      const res = await fetch(`/library/blob/upload/${contentType}`, {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${token}`
@@ -166,8 +179,8 @@
       const data = await res.json();
       setStatus(`Tiedosto "${file.name}" ladattu onnistuneesti!`, 'success');
       
-      // If it was a song, we can clear the URL field or trigger a refresh
-      if (contentType === 'song') {
+      // If it was a song or video, we can clear the URL field or trigger a refresh
+      if (contentType === 'song' || contentType === 'video') {
         videoUrl = ''; // Clear URL if they were typing one
       }
       
@@ -243,7 +256,7 @@
           bind:this={fileInput} 
           onchange={(e) => handleFileUpload(e.target.files)} 
           style="display:none;"
-          accept={contentType === 'song' ? 'audio/*' : contentType === 'image' ? 'image/*' : 'video/*'}
+          accept={contentType === 'song' ? 'audio/*,video/webm,.webm,.m4a,.mp3,.opus' : contentType === 'image' ? 'image/*' : 'video/*'}
         >
         <p class="upload-hint">Voit myös raahata tiedoston tähän</p>
       </div>

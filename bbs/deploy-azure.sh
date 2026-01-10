@@ -26,18 +26,24 @@ LOC="$2"
 STORAGE_NAME="$3"   # must be globally unique, lower-case, 3-24 alphanumeric
 APP_NAME="$4"       # must be globally unique within Azure Web Apps
 
-echo "Creating resource group: $RG ($LOC)"
-az group create --name "$RG" --location "$LOC" 1>/dev/null
+echo "Ensuring resource group: $RG ($LOC)"
+az group create --name "$RG" --location "$LOC" 1>/dev/null 2>&1 || echo "Resource group $RG already exists (this is normal for redeployments)"
 
-echo "Creating Storage Account: $STORAGE_NAME (Standard_LRS)"
+echo "Ensuring Storage Account: $STORAGE_NAME (Standard_LRS)"
 az storage account create \
   --name "$STORAGE_NAME" \
   --resource-group "$RG" \
   --location "$LOC" \
   --sku Standard_LRS \
-  --kind StorageV2 1>/dev/null
+  --kind StorageV2 1>/dev/null 2>&1 || echo "Storage account $STORAGE_NAME already exists (this is normal for redeployments)"
 
-CONN_STR=$(az storage account show-connection-string -g "$RG" -n "$STORAGE_NAME" --query connectionString -o tsv)
+# Get connection string - storage account might be in a different resource group
+STORAGE_RG=$(az storage account list --query "[?name=='$STORAGE_NAME'].resourceGroup" -o tsv)
+if [ -z "$STORAGE_RG" ]; then
+  echo "ERROR: Storage account $STORAGE_NAME not found in any resource group"
+  exit 1
+fi
+CONN_STR=$(az storage account show-connection-string -g "$STORAGE_RG" -n "$STORAGE_NAME" --query connectionString -o tsv)
 
 echo "Ensuring table: bbsEntries"
 az storage table create \
@@ -45,13 +51,13 @@ az storage table create \
   --name bbsEntries \
   --auth-mode key 1>/dev/null || true
 
-echo "Creating App Service Plan (Free F1)"
+echo "Ensuring App Service Plan (Free F1)"
 az appservice plan create \
   --name bbs-plan \
   --resource-group "$RG" \
   --location "$LOC" \
   --sku F1 \
-  --is-linux 1>/dev/null
+  --is-linux 1>/dev/null 2>&1 || echo "App Service Plan bbs-plan already exists (this is normal for redeployments)"
 
 echo "Creating Web App: $APP_NAME (Node 22)"
 # If app already exists, disable AlwaysOn to ensure compatibility with Free (F1) tier
@@ -74,7 +80,15 @@ az webapp config appsettings set \
   --settings \
     STORAGE_CONNECTION_STRING="$CONN_STR" \
     TABLE_NAME="bbsEntries" \
-    SCM_DO_BUILD_DURING_DEPLOYMENT=true 1>/dev/null
+    SCM_DO_BUILD_DURING_DEPLOYMENT=true \
+    NPM_CONFIG_LEGACY_PEER_DEPS=true 1>/dev/null
+
+# Set custom startup script
+echo "Setting custom startup script"
+az webapp config set \
+  --name "$APP_NAME" \
+  --resource-group "$RG" \
+  --startup-file "sh startup.sh" 1>/dev/null
 
 # Sync settings from config.env if it exists
 SCRIPT_DIR="$(dirname "$0")"
@@ -99,6 +113,8 @@ echo "Deploying app (zip)"
 pushd "$(dirname "$0")" >/dev/null
 TMP_ZIP="bbs_deploy.zip"
 rm -f "$TMP_ZIP"
+# Make startup script executable
+chmod +x startup.sh
 # Exclude dev artifacts, node_modules, and the zip itself
 zip -qr "$TMP_ZIP" . -x "node_modules/*" ".git/*" "*.zip" "*.env" "*.env.template"
 popd >/dev/null

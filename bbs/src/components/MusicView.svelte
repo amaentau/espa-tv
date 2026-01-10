@@ -1,12 +1,11 @@
 <script>
   import { onMount } from 'svelte';
-  let { devices, selectedDeviceId = $bindable(), token } = $props();
+  import { deviceState, playMedia } from '../lib/deviceState.svelte.js';
+  
+  let { token } = $props();
 
   let tracks = $state([]);
   let loading = $state(false);
-  let currentTrack = $state(null);
-  let audioPlayer = $state(null);
-  let isPlayingLocal = $state(false);
 
   async function loadLibrary() {
     loading = true;
@@ -16,7 +15,7 @@
         fetch('/library/SONG', {
           headers: { 'Authorization': `Bearer ${token}` }
         }),
-        fetch('/library/blob/music', {
+        fetch('/library/blob/song', {
           headers: { 'Authorization': `Bearer ${token}` }
         })
       ]);
@@ -37,57 +36,17 @@
 
   onMount(loadLibrary);
 
-  function playLocal(track) {
-    currentTrack = track;
-    isPlayingLocal = true;
-    
-    setTimeout(() => {
-      if (audioPlayer) {
-        audioPlayer.src = track.url;
-        audioPlayer.load();
-        audioPlayer.play().catch(e => console.error('Toisto epäonnistui:', e));
-      }
-    }, 0);
-  }
-
-  async function playRemote(track) {
-    if (!selectedDeviceId) return;
-    try {
-      const res = await fetch('/entry', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ 
-          key: selectedDeviceId, 
-          value1: track.url, 
-          value2: track.title,
-          eventType: 'SONG'
-        })
-      });
-      if (!res.ok) throw new Error('Toisto epäonnistui');
-      alert(`Musiikki "${track.title}" lähetetty soittimelle!`);
-    } catch (err) {
-      alert(err.message);
-    }
+  function handlePlay(track, forceLocal = false) {
+    playMedia({
+      title: track.title,
+      url: track.url,
+      type: 'SONG',
+      rowKey: track.rowKey
+    }, forceLocal);
   }
 </script>
 
 <div class="music-view fade-in">
-  {#if devices && devices.length > 0}
-    <div class="card header-card">
-      <div class="form-group">
-        <label for="deviceSelect">Toistava laite (Pi)</label>
-        <select id="deviceSelect" bind:value={selectedDeviceId}>
-          {#each devices as dev}
-            <option value={dev.id}>{dev.friendlyName || dev.id}</option>
-          {/each}
-        </select>
-      </div>
-    </div>
-  {/if}
-
   <div class="tracks-container">
     <h3 style="margin-bottom: 16px; color: var(--primary-color);">Kirjaston Kappaleet</h3>
     
@@ -96,15 +55,29 @@
     {:else}
       <div class="track-list">
         {#each tracks as track}
-          <div class="track-item {currentTrack?.rowKey === track.rowKey ? 'active' : ''}">
+          <div class="track-item {deviceState.currentMedia?.rowKey === track.rowKey ? 'active' : ''}">
             <div class="track-info">
               <span class="track-title">{track.title}</span>
-              <span class="track-artist">Lähettäjä: {track.creatorEmail}</span>
+              <span class="track-artist">Lähde: {track.creatorEmail}</span>
             </div>
             <div class="track-actions">
-              <button class="icon-btn" onclick={() => playLocal(track)} title="Toista tässä">▶️</button>
-              {#if selectedDeviceId}
-                <button class="icon-btn" onclick={() => playRemote(track)} title="Toista soittimella">📺</button>
+              <button 
+                class="icon-btn local" 
+                onclick={() => handlePlay(track, true)} 
+                title="Kuuntele tässä"
+              >
+                📱
+              </button>
+              
+              {#if deviceState.devices.length > 0}
+                <button 
+                  class="icon-btn {deviceState.isPiActive ? 'remote' : 'offline'}" 
+                  onclick={() => handlePlay(track, false)} 
+                  disabled={!deviceState.isPiActive}
+                  title={deviceState.isPiActive ? 'Toista soittimelle' : 'Soitin ei ole linjoilla'}
+                >
+                  ▶️
+                </button>
               {/if}
             </div>
           </div>
@@ -114,23 +87,6 @@
       </div>
     {/if}
   </div>
-
-  {#if currentTrack && isPlayingLocal}
-    <div class="local-player-bar fade-in">
-      <div class="card player-card">
-        <div class="now-playing">
-          <strong>Nyt soi:</strong> {currentTrack.title}
-          <button class="close-btn" onclick={() => isPlayingLocal = false}>✕</button>
-        </div>
-        <audio 
-          bind:this={audioPlayer} 
-          src={currentTrack.url} 
-          controls 
-          style="width: 100%; margin-top: 10px;"
-        ></audio>
-      </div>
-    </div>
-  {/if}
 </div>
 
 <style>
@@ -139,10 +95,7 @@
     flex-direction: column;
     gap: 20px;
     width: 100%;
-  }
-
-  .header-card {
-    padding: 16px 24px;
+    padding-bottom: 80px; /* Space for global control bar */
   }
 
   .track-list {
@@ -212,32 +165,21 @@
     transform: scale(1.1);
   }
 
-  .local-player-bar {
-    position: sticky;
-    bottom: 0;
-    margin-top: 20px;
-    z-index: 30;
+  .icon-btn.local {
+    background-color: #f0f0f0;
+    font-size: 16px;
   }
 
-  .player-card {
-    padding: 12px 16px;
-    background: white;
-    box-shadow: 0 -4px 12px rgba(0,0,0,0.1);
+  .icon-btn.remote {
+    background-color: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
   }
 
-  .now-playing {
-    display: flex;
-    justify-content: space-between;
-    font-size: 14px;
-    align-items: center;
-  }
-
-  .close-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 18px;
-    padding: 0 5px;
+  .icon-btn.offline {
+    background-color: #eee;
+    color: #ccc;
+    cursor: not-allowed;
+    border-color: #eee;
   }
 </style>
-
