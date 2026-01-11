@@ -10,6 +10,7 @@
   import SettingsView from './SettingsView.svelte';
   import AdminModal from './modals/AdminModal.svelte';
   import GlobalControlBar from './GlobalControlBar.svelte';
+  import MediaManager from './MediaManager.svelte';
 
   let { authState, onLogout } = $props();
   
@@ -17,7 +18,6 @@
   let metadata = $state({ gameGroups: [], eventTypes: [] });
   let showAdminModal = $state(false);
   let historyRefreshTrigger = $state(0);
-  let activeView = $state('tv'); // Default to Espa TV view after login
 
   // Helper to check if user has access to a specific view
   const canAccess = (view) => {
@@ -27,8 +27,8 @@
 
   // If activeView is set to something user cannot access, fallback to 'tv'
   $effect(() => {
-    if (!canAccess(activeView)) {
-      activeView = 'tv';
+    if (!canAccess(deviceState.activeView)) {
+      deviceState.activeView = 'tv';
     }
   });
 
@@ -69,13 +69,12 @@
   />
 
   <MenuSpinner 
-    bind:activeView 
     isAdmin={authState.isAdmin} 
     userGroup={authState.userGroup} 
   />
 
   <div class="view-content">
-    {#if activeView === 'producer'}
+    {#if deviceState.activeView === 'producer'}
       <ProducerView 
         {authState} 
         {onLogout} 
@@ -87,24 +86,24 @@
         {historyRefreshTrigger}
         {refreshHistory}
       />
-    {:else if activeView === 'settings'}
+    {:else if deviceState.activeView === 'settings'}
       <SettingsView 
         {authState} 
         onOpenAdmin={() => showAdminModal = true}
       />
-    {:else if activeView === 'tv'}
+    {:else if deviceState.activeView === 'tv'}
       <EspaTvView 
         {authState} 
         devices={deviceState.devices} 
         token={authState.token}
       />
-    {:else if activeView === 'videot'}
+    {:else if deviceState.activeView === 'videot'}
       <HighlightsView 
         {authState} 
         devices={deviceState.devices} 
         token={authState.token}
       />
-    {:else if activeView === 'music'}
+    {:else if deviceState.activeView === 'music'}
       <MusicView 
         {authState}
         token={authState.token}
@@ -114,6 +113,8 @@
 
   <GlobalControlBar />
 </div>
+
+<MediaManager />
 
 {#if showAdminModal}
   <AdminModal 

@@ -10,6 +10,16 @@ export const deviceState = $state({
   currentMedia: null, // { title, url, type, rowKey, metadata }
   playbackTarget: localStorage.getItem('espa_playback_target') || 'browser', // 'browser' or deviceId
   
+  // NEW: Navigation state
+  activeView: 'tv',
+
+  // UI & Sync state
+  isPaused: true,
+  currentTime: 0,
+  duration: 0,
+  isAnchored: false, // true = top of Highlights, false = docked in bottom bar
+  isFullscreen: false,
+
   // Derived state
   get activeDevice() {
     // If playbackTarget is a device ID, that's our active device

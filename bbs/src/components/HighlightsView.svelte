@@ -62,10 +62,15 @@
 
   onMount(() => {
     loadLibrary();
+    // Re-anchor if video is already playing when we return to this view
+    if (deviceState.currentMedia?.type === 'VIDEO') {
+      deviceState.isAnchored = true;
+    }
   });
 
   function handlePlay(stream) {
     selectedStream = stream;
+    deviceState.isAnchored = true;
     playMedia({
       title: stream.title,
       url: stream.url,
@@ -78,6 +83,12 @@
     socialTargetId = stream.rowKey;
     showSocial = true;
   }
+
+  import { onDestroy } from 'svelte';
+  onDestroy(() => {
+    // When leaving this view, dock the video to the bottom bar
+    deviceState.isAnchored = false;
+  });
 </script>
 
 <div class="highlights-view">
@@ -86,6 +97,12 @@
     <p class="view-subtitle">Tallenteet ja huippuhetket</p>
   </div>
   
+  {#if deviceState.currentMedia && deviceState.isAnchored}
+    <div class="video-anchor-placeholder">
+      <!-- MediaManager will float over this space -->
+    </div>
+  {/if}
+
   {#if loading}
     <div class="loading-state">
       <div class="loader"></div>
@@ -174,6 +191,16 @@
 <style>
   .highlights-view {
     padding-bottom: 40px;
+  }
+
+  .video-anchor-placeholder {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    max-height: 252px;
+    background: rgba(0,0,0,0.03);
+    border-radius: 12px;
+    margin-bottom: 24px;
+    transition: all 0.3s ease;
   }
 
   .view-header {

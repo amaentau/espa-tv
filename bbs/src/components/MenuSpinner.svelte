@@ -1,5 +1,7 @@
 <script>
-  let { activeView = $bindable(), isAdmin, userGroup } = $props();
+  import { deviceState } from '../lib/deviceState.svelte.js';
+
+  let { isAdmin, userGroup } = $props();
 
   const menuItems = [
     { 
@@ -47,7 +49,7 @@
 
   function handleSelect(item) {
     if (hasAccess(item)) {
-      activeView = item.id;
+      deviceState.activeView = item.id;
     }
   }
 </script>
@@ -57,7 +59,7 @@
     {#each menuItems as item}
       {@const enabled = hasAccess(item)}
       <button 
-        class="menu-item {activeView === item.id ? 'active' : ''} {!enabled ? 'disabled' : ''}"
+        class="menu-item {deviceState.activeView === item.id ? 'active' : ''} {!enabled ? 'disabled' : ''}"
         onclick={() => handleSelect(item)}
         title={item.label}
       >
@@ -66,7 +68,7 @@
             src={enabled ? item.img : item.imgBW} 
             alt={item.label} 
           />
-          {#if activeView === item.id}
+          {#if deviceState.activeView === item.id}
             <div class="selection-halo"></div>
           {/if}
         </div>
@@ -86,6 +88,8 @@
     display: block;
     -webkit-overflow-scrolling: touch;
     scroll-snap-type: x mandatory;
+    position: relative;
+    z-index: 1100; /* Above MediaManager (500) and Header (1000) */
   }
 
   .spinner-container::-webkit-scrollbar {

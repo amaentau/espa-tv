@@ -1,20 +1,31 @@
 <script>
-  import { onMount } from 'svelte';
   import { deviceState, sendCommand, setPlaybackTarget } from '../lib/deviceState.svelte.js';
 
   let commandLoading = $state(false);
   let statusMsg = $state('');
-  let videoElement = $state(null);
 
   async function handleCommand(cmd) {
+    if (deviceState.playbackTarget === 'browser') {
+      if (cmd === 'play') deviceState.isPaused = false;
+      if (cmd === 'pause') deviceState.isPaused = true;
+      if (cmd === 'fullscreen') {
+        // Only available on desktop/tablet where auto-rotate isn't a thing
+        const el = document.querySelector('.media-container video');
+        if (el) {
+          if (el.requestFullscreen) {
+            el.requestFullscreen().catch(err => console.warn('FS failed:', err));
+          } else if (el.webkitRequestFullscreen) {
+            el.webkitRequestFullscreen();
+          }
+        }
+      }
+      return;
+    }
+
     commandLoading = true;
     try {
       const res = await sendCommand(cmd);
-      if (res.mode === 'direct') {
-        statusMsg = '✅ Suoritettu';
-      } else {
-        statusMsg = '📨 Jonossa';
-      }
+      statusMsg = res.mode === 'direct' ? '✅ Suoritettu' : '📨 Jonossa';
       setTimeout(() => statusMsg = '', 3000);
     } catch (e) {
       statusMsg = '❌ Virhe';
@@ -23,117 +34,105 @@
     }
   }
 
-  function closeLocalPlayer() {
+  function closeMedia() {
     deviceState.currentMedia = null;
+    deviceState.isAnchored = false;
   }
 
-  async function handleOrientationChange() {
-    if (!videoElement || deviceState.currentMedia?.type !== 'VIDEO') return;
-    
-    const isLandscape = window.innerWidth > window.innerHeight;
-    
-    try {
-      if (isLandscape) {
-        if (!document.fullscreenElement) {
-          if (videoElement.requestFullscreen) {
-            await videoElement.requestFullscreen();
-          } else if (videoElement.webkitRequestFullscreen) {
-            await videoElement.webkitRequestFullscreen();
-          }
-        }
-      } else {
-        if (document.fullscreenElement) {
-          await document.exitFullscreen();
-        }
+  function toggleExpand() {
+    if (deviceState.isAnchored) {
+      deviceState.isAnchored = false;
+    } else if (deviceState.currentMedia) {
+      // Return to originating view
+      if (deviceState.currentMedia.type === 'VIDEO') {
+        deviceState.activeView = 'videot';
+      } else if (deviceState.currentMedia.type === 'SONG') {
+        deviceState.activeView = 'music';
       }
-    } catch (err) {
-      // Fullscreen might be blocked by browser if not triggered by user interaction
-      // but orientation change sometimes allows it on mobile
-      console.warn('Fullscreen transition failed:', err);
     }
   }
 
-  onMount(() => {
-    window.addEventListener('resize', handleOrientationChange);
-    return () => {
-      window.removeEventListener('resize', handleOrientationChange);
-    };
+  function handleSeek(e) {
+    const bar = e.currentTarget;
+    const rect = bar.getBoundingClientRect();
+    const pct = (e.clientX - rect.left) / rect.width;
+    
+    if (deviceState.playbackTarget === 'browser') {
+      const el = document.querySelector('.media-container video, .media-container audio');
+      if (el) el.currentTime = el.duration * pct;
+    } else {
+      sendCommand('seek', { percentage: pct * 100 });
+    }
+  }
+
+  const barHeightClass = $derived(() => {
+    if (!deviceState.currentMedia) return 'h-utility';
+    if (deviceState.isAnchored) return 'h-control';
+    if (deviceState.currentMedia.type === 'VIDEO') return 'h-immersive';
+    return 'h-performance';
   });
 </script>
 
-<div class="global-control-bar {deviceState.currentMedia ? 'active' : ''} {deviceState.isPiActive ? 'pi-online' : ''} {deviceState.devices.length > 0 ? 'has-devices' : ''}">
-  <div class="bar-content">
-    {#if deviceState.currentMedia}
-      <div class="media-info">
-        <div class="title-row">
-          <span class="now-playing-label">Nyt {deviceState.playbackTarget !== 'browser' ? 'toistetaan soittimella' : 'toistetaan tässä'}:</span>
-          <span class="media-title">{deviceState.currentMedia.title}</span>
-        </div>
-        
-        <div class="player-wrapper">
-          {#if deviceState.playbackTarget === 'browser'}
-            {#if deviceState.currentMedia.type === 'VIDEO'}
-              <video 
-                bind:this={videoElement}
-                src={deviceState.currentMedia.url} 
-                controls 
-                autoplay
-                crossorigin="anonymous"
-                class="local-media"
-              >
-                <track kind="captions" />
-              </video>
-            {:else if deviceState.currentMedia.type === 'SONG'}
-              <audio 
-                src={deviceState.currentMedia.url} 
-                controls 
-                autoplay
-                crossorigin="anonymous"
-                class="local-media"
-              ></audio>
-            {/if}
-          {/if}
-        </div>
-      </div>
-    {/if}
+<div class="global-control-bar {barHeightClass()} {deviceState.currentMedia ? 'active' : ''} {deviceState.devices.length > 0 ? 'has-devices' : ''}">
+  
+  {#if deviceState.currentMedia}
+    <!-- Glow Line Seeker -->
+    <button class="glow-line-seeker" onclick={handleSeek} aria-label="Seeker">
+      <div class="progress-fill" style="width: {(deviceState.currentTime / deviceState.duration) * 100}%"></div>
+    </button>
+  {/if}
 
-    <div class="device-status-section">
-      {#if deviceState.devices.length > 0}
-        <div class="target-selector">
-          <span class="target-label">Toista laitteella:</span>
-          <div class="selector-container">
+  <div class="bar-content">
+    <div class="left-section">
+      {#if deviceState.currentMedia && !deviceState.isAnchored}
+        <!-- The Dock Placeholder (MediaManager floats over this) -->
+        <button class="media-dock-trigger" onclick={toggleExpand} aria-label="Expand media">
+          <div class="dock-spacer"></div>
+        </button>
+      {/if}
+      
+      <div class="media-info">
+        {#if deviceState.currentMedia}
+          <span class="now-playing-label">
+            {deviceState.playbackTarget !== 'browser' ? 'Toistetaan soittimella' : 'Toistetaan tässä'}
+          </span>
+          <span class="media-title">{deviceState.currentMedia.title}</span>
+        {:else if deviceState.devices.length > 0}
+          <span class="now-playing-label">Valitse soitin:</span>
+          <div class="device-mini-selector">
             <span class="status-dot {deviceState.playbackTarget === 'browser' ? 'browser' : (deviceState.activeDevice?.iotStatus === 'Connected' ? 'online' : 'offline')}"></span>
             <select 
               value={deviceState.playbackTarget} 
               onchange={(e) => setPlaybackTarget(e.target.value)}
-              class="device-select"
             >
-              <option value="browser">Tämä selain (📱/💻)</option>
-              <hr />
+              <option value="browser">Tämä laite</option>
               {#each deviceState.devices as dev}
-                <option value={dev.id}>
-                  {dev.friendlyName || dev.id} {dev.iotStatus === 'Connected' ? '(Linjoilla)' : '(Offline)'}
-                </option>
+                <option value={dev.id}>{dev.friendlyName || dev.id}</option>
               {/each}
             </select>
           </div>
-        </div>
-      {/if}
+        {/if}
+      </div>
+    </div>
 
-      {#if deviceState.playbackTarget !== 'browser' && deviceState.isPiActive && deviceState.currentMedia}
-        <div class="remote-controls">
-          <button onclick={() => handleCommand('play')} disabled={commandLoading} title="Toista">▶️</button>
-          <button onclick={() => handleCommand('pause')} disabled={commandLoading} title="Tauko">⏸️</button>
-          <button onclick={() => handleCommand('fullscreen')} disabled={commandLoading} title="Koko näyttö">📺</button>
-        </div>
-      {/if}
-
+    <div class="right-section">
       {#if deviceState.currentMedia}
-        <button class="close-bar" onclick={closeLocalPlayer} title="Sulje soitin">✕</button>
+        <div class="playback-controls">
+          {#if deviceState.isPaused}
+            <button class="play-btn" onclick={() => handleCommand('play')}>▶</button>
+          {:else}
+            <button class="play-btn pause" onclick={() => handleCommand('pause')}>II</button>
+          {/if}
+          
+          {#if deviceState.currentMedia.type === 'VIDEO'}
+            <button class="fs-btn" onclick={() => handleCommand('fullscreen')}>📺</button>
+          {/if}
+        </div>
+        <button class="close-btn" onclick={closeMedia}>✕</button>
       {/if}
     </div>
   </div>
-  
+
   {#if statusMsg}
     <div class="mini-status">{statusMsg}</div>
   {/if}
@@ -145,98 +144,165 @@
     bottom: 0;
     left: 0;
     right: 0;
-    background: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border-top: 1px solid var(--border-color);
-    box-shadow: 0 -4px 20px rgba(0,0,0,0.1);
-    z-index: 1000;
-    padding: 10px 16px;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(0,0,0,0.05);
+    box-shadow: 0 -8px 32px rgba(0,0,0,0.1);
+    z-index: 1500;
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
     transform: translateY(100%);
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .global-control-bar.active, .global-control-bar.has-devices {
     transform: translateY(0);
   }
 
+  /* Height Tiers */
+  .h-utility { height: 60px; }
+  .h-control { height: 80px; }
+  .h-performance { height: 90px; }
+  .h-immersive { height: 110px; }
+
+  .glow-line-seeker {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: rgba(0,0,0,0.05);
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    overflow: visible;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--primary-color);
+    box-shadow: 0 0 12px var(--primary-color);
+    transition: width 0.2s linear;
+    position: relative;
+  }
+
   .bar-content {
     max-width: 480px;
     margin: 0 auto;
+    padding: 12px 20px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 12px;
-    width: 100%;
+    height: 100%;
   }
 
-  .media-info {
+  .left-section {
+    display: flex;
+    align-items: center;
+    gap: 16px;
     flex: 1;
     min-width: 0;
   }
 
-  .title-row {
+  .media-dock-trigger {
+    width: 100px;
+    height: 56px;
+    flex-shrink: 0;
+    background: rgba(0,0,0,0.05);
+    border-radius: 8px;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .media-info {
     display: flex;
     flex-direction: column;
-    margin-bottom: 4px;
+    min-width: 0;
   }
 
   .now-playing-label {
-    font-size: 9px;
+    font-size: 10px;
+    font-weight: 800;
     text-transform: uppercase;
     color: var(--text-sub);
-    font-weight: 800;
     letter-spacing: 0.5px;
   }
 
   .media-title {
-    font-size: 13px;
-    font-weight: 700;
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--primary-color);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: var(--primary-color);
   }
 
-  .local-media {
-    height: 32px;
-    width: 100%;
-    border-radius: 8px;
-  }
-
-  .device-status-section {
+  .right-section {
     display: flex;
     align-items: center;
     gap: 12px;
   }
 
-  .target-selector {
+  .playback-controls {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
+    gap: 8px;
   }
 
-  .target-label {
-    font-size: 9px;
-    text-transform: uppercase;
-    color: var(--text-sub);
-    font-weight: 800;
-    letter-spacing: 0.5px;
-  }
-
-  .selector-container {
+  .play-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    font-size: 18px;
     display: flex;
     align-items: center;
-    gap: 8px;
-    background: #f8f9f7;
-    padding: 6px 10px;
-    border-radius: 12px;
-    border: 1.5px solid var(--border-color);
-    transition: all 0.2s ease;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(21, 112, 57, 0.2);
   }
 
-  .selector-container:hover {
-    border-color: var(--primary-color);
+  .play-btn.pause { font-family: monospace; font-weight: bold; }
+
+  .fs-btn {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: var(--text-sub);
+    padding: 8px;
+    display: none; /* Hidden by default (mobile) */
+  }
+
+  @media (min-width: 768px) {
+    .fs-btn {
+      display: flex; /* Only show on desktop/tablet */
+    }
+  }
+
+  .close-btn {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: var(--text-sub);
+    padding: 8px;
+  }
+
+  .device-mini-selector {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .device-mini-selector select {
+    border: none;
+    background: none;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-main);
+    outline: none;
   }
 
   .status-dot {
@@ -244,89 +310,20 @@
     height: 8px;
     border-radius: 50%;
   }
-
-  .status-dot.online { background-color: #28a745; box-shadow: 0 0 8px rgba(40, 167, 69, 0.4); }
-  .status-dot.offline { background-color: #dc3545; }
-  .status-dot.browser { background-color: var(--primary-color); }
-
-  .device-select {
-    border: none;
-    background: transparent;
-    font-size: 12px;
-    font-weight: 700;
-    outline: none;
-    padding-right: 4px;
-    color: var(--text-main);
-    cursor: pointer;
-  }
-
-  .remote-controls {
-    display: flex;
-    gap: 6px;
-  }
-
-  .remote-controls button {
-    background: white;
-    border: 1.5px solid var(--border-color);
-    border-radius: 8px;
-    padding: 6px;
-    cursor: pointer;
-    font-size: 16px;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-  }
-
-  .remote-controls button:hover {
-    border-color: var(--primary-color);
-    background: #f0f7f2;
-    transform: translateY(-2px);
-  }
-
-  .close-bar {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 18px;
-    padding: 4px;
-    color: var(--text-sub);
-    transition: color 0.2s ease;
-  }
-
-  .close-bar:hover {
-    color: #d13438;
-  }
+  .status-dot.online { background: #28a745; }
+  .status-dot.offline { background: #dc3545; }
+  .status-dot.browser { background: var(--primary-color); }
 
   .mini-status {
     position: absolute;
-    top: -28px;
-    right: 16px;
+    top: -40px;
+    right: 20px;
     background: var(--primary-color);
     color: white;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 4px 12px;
+    padding: 6px 16px;
     border-radius: 20px;
-    box-shadow: 0 4px 10px rgba(21, 112, 57, 0.2);
-    animation: flyUp 0.3s ease-out;
-  }
-
-  @keyframes flyUp {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  @media (max-width: 440px) {
-    .now-playing-label, .target-label {
-      font-size: 8px;
-    }
-    
-    .device-select {
-      max-width: 90px;
-    }
+    font-size: 12px;
+    font-weight: 700;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
   }
 </style>
-
