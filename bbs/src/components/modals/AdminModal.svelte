@@ -120,6 +120,42 @@
       alert('Päivitys epäonnistui');
     }
   }
+
+  async function toggleApproval(user) {
+    try {
+      const res = await fetch(`/auth/users/${encodeURIComponent(user.email)}`, {
+        method: 'PATCH',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ isApproved: !user.isApproved })
+      });
+      if (!res.ok) throw new Error();
+      loadUsers();
+    } catch (err) {
+      alert('Tilan päivitys epäonnistui');
+    }
+  }
+
+  async function resetDevices(user) {
+    if (!confirm(`Haluatko varmasti nollata käyttäjän ${user.email} laitelistauksen?`)) return;
+    try {
+      const res = await fetch(`/auth/users/${encodeURIComponent(user.email)}`, {
+        method: 'PATCH',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ resetDevices: true })
+      });
+      if (!res.ok) throw new Error();
+      alert('Laitteet nollattu');
+      loadUsers();
+    } catch (err) {
+      alert('Nollaus epäonnistui');
+    }
+  }
 </script>
 
 <div class="modal-backdrop" onclick={onClose}>
@@ -172,20 +208,33 @@
           <h3 class="section-title">Käyttäjähallinta</h3>
           <div class="users-list">
             {#each usersList as u}
-              <div class="user-item">
+              <div class="user-item" class:pending-approval={!u.isApproved}>
                 <div class="user-info-text">
-                  <strong>{u.email}</strong>
-                  <span class="user-role">{u.isAdmin ? 'Super Admin' : (u.userGroup || 'Ei ryhmää')}</span>
+                  <strong>{u.username}</strong>
+                  <span class="user-email">{u.email}</span>
+                  <span class="user-role">
+                    {u.isAdmin ? 'Super Admin' : (u.userGroup || 'Ei ryhmää')} 
+                    | Laitteet: {u.deviceCount}/3
+                  </span>
                 </div>
                 <div class="user-actions">
-                  <select 
-                    onchange={(e) => updateUserRole(u, e.target.value)}
-                    disabled={u.email === userEmail}
-                  >
-                    <option value="" selected={!u.userGroup && !u.isAdmin}>Ei ryhmää</option>
-                    <option value="Veo Ylläpitäjä" selected={u.userGroup === 'Veo Ylläpitäjä'}>Veo Ylläpitäjä</option>
-                    <option value="ADMIN" selected={u.isAdmin}>Super Admin</option>
-                  </select>
+                  <div class="action-row">
+                    <label class="approve-toggle">
+                      <input type="checkbox" checked={u.isApproved} onchange={() => toggleApproval(u)} disabled={u.email === userEmail}>
+                      <span>{u.isApproved ? 'Hyväksytty' : 'Odottaa'}</span>
+                    </label>
+                  </div>
+                  <div class="action-row">
+                    <select 
+                      onchange={(e) => updateUserRole(u, e.target.value)}
+                      disabled={u.email === userEmail}
+                    >
+                      <option value="" selected={!u.userGroup && !u.isAdmin}>Ei ryhmää</option>
+                      <option value="Veo Ylläpitäjä" selected={u.userGroup === 'Veo Ylläpitäjä'}>Veo Ylläpitäjä</option>
+                      <option value="ADMIN" selected={u.isAdmin}>Super Admin</option>
+                    </select>
+                    <button class="small-btn warn" onclick={() => resetDevices(u)} title="Nollaa laitteet">Reset</button>
+                  </div>
                 </div>
               </div>
             {/each}
@@ -285,12 +334,16 @@
   }
 
   .user-item {
-    padding: 10px;
+    padding: 12px;
     border-bottom: 1px solid #eee;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
+  }
+
+  .user-item.pending-approval {
+    background-color: #fff9e6;
   }
 
   .user-info-text {
@@ -298,22 +351,63 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+    flex: 1;
   }
   
   .user-info-text strong {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 15px;
+  }
+
+  .user-email {
+    color: var(--text-sub);
+    font-size: 11px;
   }
 
   .user-role {
     font-size: 11px;
     color: #666;
+    margin-top: 2px;
+  }
+
+  .user-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-end;
+  }
+
+  .action-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .approve-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    cursor: pointer;
   }
 
   .user-actions select {
     font-size: 12px;
     padding: 4px;
+  }
+
+  .small-btn {
+    padding: 4px 8px;
+    font-size: 10px;
+    width: auto;
+    margin: 0;
+  }
+
+  .small-btn.warn {
+    background-color: #f44336;
+    color: white;
   }
 
   textarea {

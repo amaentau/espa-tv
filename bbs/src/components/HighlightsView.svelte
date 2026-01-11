@@ -3,6 +3,7 @@
   import { deviceState, playMedia } from '../lib/deviceState.svelte.js';
   import { isMediaCached, preCacheMedia, removeFromCache } from '../lib/cacheUtils.js';
   import SocialSection from './SocialSection.svelte';
+  import { socialState } from '../lib/socialState.svelte.js';
 
   let { authState, token } = $props();
 
@@ -10,11 +11,9 @@
   let loading = $state(false);
   let error = $state('');
   let selectedStream = $state(null);
-  let showLocalPlayer = $state(false);
   let showSocial = $state(false);
   let socialTargetId = $state(null);
   let cacheStatus = $state({}); // rowKey -> boolean
-  let videoElement = $state(null);
 
   async function checkCacheStatus() {
     const status = {};
@@ -33,29 +32,6 @@
     setTimeout(checkCacheStatus, 500);
   }
 
-  async function handleOrientationChange() {
-    if (!showLocalPlayer || !videoElement) return;
-    const isLandscape = window.innerWidth > window.innerHeight;
-    
-    try {
-      if (isLandscape) {
-        if (!document.fullscreenElement) {
-          if (videoElement.requestFullscreen) {
-            await videoElement.requestFullscreen();
-          } else if (videoElement.webkitRequestFullscreen) {
-            await videoElement.webkitRequestFullscreen();
-          }
-        }
-      } else {
-        if (document.fullscreenElement) {
-          await document.exitFullscreen();
-        }
-      }
-    } catch (err) {
-      console.warn('Fullscreen transition failed:', err);
-    }
-  }
-
   async function loadLibrary() {
     loading = true;
     error = '';
@@ -72,6 +48,11 @@
       );
       
       await checkCacheStatus();
+
+      // Fetch social stats for each stream
+      streams.forEach(stream => {
+        socialState.fetchStats(stream.rowKey, token);
+      });
     } catch (err) {
       error = err.message;
     } finally {
@@ -81,43 +62,16 @@
 
   onMount(() => {
     loadLibrary();
-    window.addEventListener('resize', handleOrientationChange);
-    return () => {
-      window.removeEventListener('resize', handleOrientationChange);
-    };
   });
 
-  function handlePlayRemote(stream) {
+  function handlePlay(stream) {
+    selectedStream = stream;
     playMedia({
       title: stream.title,
       url: stream.url,
-      type: 'VEO',
+      type: 'VIDEO',
       metadata: stream.metadata
     });
-  }
-
-  function handlePlayLocal(stream) {
-    showLocalPlayer = true;
-    setTimeout(() => {
-      const panel = document.querySelector('.action-panel');
-      if (panel) panel.scrollIntoView({ behavior: 'smooth' });
-    }, 100);
-  }
-
-  function toggleFullscreen() {
-    if (!videoElement) return;
-    if (!document.fullscreenElement) {
-      if (videoElement.requestFullscreen) videoElement.requestFullscreen();
-    } else {
-      document.exitFullscreen();
-    }
-  }
-
-  function closeLocalPlayer() {
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    }
-    showLocalPlayer = false;
   }
 
   function openSocial(stream) {
@@ -126,97 +80,83 @@
   }
 </script>
 
-<div class="highlights-view fade-in">
-  <div class="streams-container">
-    <h3 style="margin-bottom: 16px; color: var(--primary-color);">Videot</h3>
-    
-    {#if loading}
+<div class="highlights-view">
+  <div class="view-header">
+    <h3 class="view-title">Videot</h3>
+    <p class="view-subtitle">Tallenteet ja huippuhetket</p>
+  </div>
+  
+  {#if loading}
+    <div class="loading-state">
       <div class="loader"></div>
-    {:else if error}
-      <div class="status-msg error">{error}</div>
-    {:else}
-      <div class="stream-list">
-        {#each streams as stream}
-          <div class="stream-item {selectedStream?.rowKey === stream.rowKey ? 'active' : ''}">
-            <div class="stream-info" onclick={() => selectedStream = stream} onkeydown={(e) => e.key === 'Enter' && (selectedStream = stream)} role="button" tabindex="0">
-              <div class="stream-main-info">
-                <span class="title">{stream.title}</span>
+      <p>Haetaan videoita...</p>
+    </div>
+  {:else if error}
+    <div class="status-msg error">{error}</div>
+  {:else}
+    <div class="stream-grid">
+      {#each streams as stream}
+        <div class="stream-item-wrapper">
+          <button 
+            class="stream-card {selectedStream?.rowKey === stream.rowKey ? 'active' : ''}" 
+            onclick={() => handlePlay(stream)}
+          >
+            <div class="card-content">
+              <div class="badge-row">
+                <span class="badge badge-{stream.metadata?.eventType?.toLowerCase().replace(/\s+/g, '') || 'default'}">
+                  {stream.metadata?.eventType || 'Video'}
+                </span>
                 <span class="date">{new Date(stream.timestamp).toLocaleDateString('fi-FI')}</span>
               </div>
-              <div class="stream-sub-info">
-                <span class="badge badge-{stream.metadata?.eventType?.toLowerCase().replace(/\s+/g, '') || 'default'}">{stream.metadata?.eventType || 'Video'}</span>
-                <span class="creator">Lähde: {stream.creatorEmail}</span>
+              
+              <h4 class="stream-title">{stream.title}</h4>
+              
+              <div class="stream-footer">
+                <div class="footer-left">
+                  <span class="creator">Lähde: {stream.creatorEmail.split('@')[0]}</span>
+                  
+                  {#if socialState.stats[stream.rowKey]}
+                    <div class="social-summary">
+                      {#if socialState.stats[stream.rowKey].commentCount > 0}
+                        <span class="stat-item">💬 {socialState.stats[stream.rowKey].commentCount}</span>
+                      {/if}
+                      {#each Object.entries(socialState.stats[stream.rowKey].reactions) as [emoji, count]}
+                        {#if count > 0}
+                          <span class="stat-item">{emoji} {count}</span>
+                        {/if}
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+
+                <div class="play-indicator">
+                  <span class="play-icon">▶</span>
+                  <span class="play-text">Toista</span>
+                </div>
               </div>
             </div>
             
-            <div class="stream-actions">
-              <button 
-                class="icon-btn social-btn" 
-                onclick={(e) => { e.stopPropagation(); openSocial(stream); }} 
-                title="Kommentit ja reaktiot"
-              >
-                💬
-              </button>
-
-              <button 
-                class="icon-btn cache {cacheStatus[stream.rowKey] ? 'cached' : ''}" 
-                onclick={() => toggleCache(stream)}
-                title={cacheStatus[stream.rowKey] ? 'Poista muistista' : 'Lataa muistiin'}
-              >
-                {cacheStatus[stream.rowKey] ? '💾' : '📥'}
-              </button>
-
-              <button 
-                class="icon-btn local" 
-                onclick={() => { selectedStream = stream; handlePlayLocal(stream); }} 
-                title="Katso tässä"
-              >
-                📱
-              </button>
-              
-              {#if deviceState.devices.length > 0}
-                <button 
-                  class="icon-btn {deviceState.isPiActive ? 'remote' : 'offline'}" 
-                  onclick={() => handlePlayRemote(stream)} 
-                  disabled={!deviceState.isPiActive}
-                  title={deviceState.isPiActive ? 'Toista soittimelle' : 'Soitin ei ole linjoilla'}
-                >
-                  ▶️
-                </button>
-              {/if}
-            </div>
-          </div>
-        {:else}
-          <div class="empty-state">Kirjastossa ei ole vielä videoita.</div>
-        {/each}
-      </div>
-    {/if}
-  </div>
-
-  {#if selectedStream && showLocalPlayer}
-    <div class="action-panel fade-in">
-      <div class="card">
-        <div class="card-header">
-          <h4>{selectedStream.title}</h4>
-          <button class="close-btn" onclick={closeLocalPlayer}>✕</button>
-        </div>
-
-        <div class="local-player-container">
-          <video 
-            bind:this={videoElement}
-            src={selectedStream.url} 
-            controls 
-            autoplay 
-            class="local-video"
-          >
-            <track kind="captions" />
-            Selaimesi ei tue videotoistoa.
-          </video>
-          <button class="fullscreen-overlay-btn" onclick={toggleFullscreen} title="Koko näyttö">
-            ⛶
+            {#if selectedStream?.rowKey === stream.rowKey}
+              <div class="active-ripple"></div>
+            {/if}
           </button>
+          
+          <div class="track-actions">
+            <button 
+              class="action-icon-btn social" 
+              onclick={() => openSocial(stream)}
+              title="Kommentit"
+            >
+              💬
+            </button>
+          </div>
         </div>
-      </div>
+      {:else}
+        <div class="empty-state">
+          <div class="empty-icon">🎬</div>
+          <p>Kirjastossa ei ole vielä videoita.</p>
+        </div>
+      {/each}
     </div>
   {/if}
 
@@ -233,194 +173,229 @@
 
 <style>
   .highlights-view {
-    display: flex;
-    flex-direction: column;
+    padding-bottom: 40px;
+  }
+
+  .view-header {
+    margin-bottom: 24px;
+    text-align: center;
+  }
+
+  .view-title {
+    font-size: 28px;
+    font-weight: 900;
+    color: var(--primary-color);
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: -0.5px;
+  }
+
+  .view-subtitle {
+    font-size: 14px;
+    color: var(--text-sub);
+    margin: 4px 0 0 0;
+  }
+
+  .loading-state {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-sub);
+  }
+
+  .stream-grid {
+    display: grid;
+    grid-template-columns: 1fr;
     gap: 20px;
-    width: 100%;
-    padding-bottom: 80px;
   }
 
-  .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-  }
-
-  .close-btn {
-    background: none;
-    border: none;
-    font-size: 20px;
-    cursor: pointer;
-    color: var(--text-sub);
-  }
-
-  .local-player-container {
-    position: relative;
-    width: 100%;
-    background: black;
-    border-radius: var(--radius);
-    overflow: hidden;
-    aspect-ratio: 16 / 9;
-  }
-
-  .fullscreen-overlay-btn {
-    position: absolute;
-    bottom: 10px;
-    right: 10px;
-    background: rgba(0, 0, 0, 0.5);
-    color: white;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 4px;
-    padding: 4px 8px;
-    font-size: 18px;
-    cursor: pointer;
-    z-index: 10;
-    transition: background 0.2s;
-    display: none;
-  }
-
-  @media (hover: hover) {
-    .fullscreen-overlay-btn { display: block; }
-    .fullscreen-overlay-btn:hover { background: rgba(0, 0, 0, 0.8); }
-  }
-
-  .local-video {
-    width: 100%;
-    height: 100%;
-  }
-
-  .local-video:fullscreen { object-fit: contain; }
-
-  .stream-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .stream-item {
-    background: white;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-    padding: 12px 16px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    transition: all 0.2s ease;
-  }
-
-  .stream-item:hover { border-color: var(--primary-color); }
-  .stream-item.active {
-    border-color: var(--primary-color);
-    background: rgba(21, 112, 57, 0.05);
-  }
-
-  .stream-info {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-width: 0;
-    cursor: pointer;
-  }
-
-  .stream-main-info {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    margin-bottom: 2px;
-  }
-
-  .title {
-    font-weight: 700;
-    font-size: 15px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .date {
-    font-size: 11px;
-    color: var(--text-sub);
-    white-space: nowrap;
-  }
-
-  .stream-sub-info {
+  .stream-item-wrapper {
     display: flex;
     align-items: center;
     gap: 12px;
+    width: 100%;
+  }
+
+  .stream-card {
+    background: white;
+    border: 1.5px solid var(--border-color);
+    border-radius: 20px;
+    padding: 0;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    flex: 1;
+    min-width: 0;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+  }
+
+  .stream-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--primary-color);
+    box-shadow: 0 12px 24px rgba(21, 112, 57, 0.1);
+  }
+
+  .stream-card:active {
+    transform: translateY(-2px);
+  }
+
+  .stream-card.active {
+    border-color: var(--primary-color);
+    background: #f0f7f2;
+    box-shadow: 0 8px 20px rgba(21, 112, 57, 0.15);
+  }
+
+  .card-content {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .badge-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .stream-title {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--text-main);
+    margin: 0;
+    line-height: 1.3;
+  }
+
+  .stream-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-top: 4px;
+  }
+
+  .footer-left {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .social-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .stat-item {
+    font-size: 12px;
+    font-weight: 700;
+    background: rgba(0, 0, 0, 0.05);
+    padding: 2px 8px;
+    border-radius: 12px;
+    color: var(--text-main);
+    white-space: nowrap;
+  }
+
+  .date {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-sub);
   }
 
   .creator {
     font-size: 12px;
     color: var(--text-sub);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    opacity: 0.8;
   }
 
-  .stream-actions {
+  .play-indicator {
     display: flex;
-    gap: 8px;
-    margin-left: 12px;
+    align-items: center;
+    gap: 6px;
+    color: var(--primary-color);
+    font-weight: 800;
+    font-size: 14px;
+    text-transform: uppercase;
+    flex-shrink: 0;
   }
 
-  .icon-btn {
-    background: none;
-    border: 1px solid var(--border-color);
-    padding: 8px;
+  .play-icon {
+    width: 24px;
+    height: 24px;
+    background: var(--primary-color);
+    color: white;
     border-radius: 50%;
-    cursor: pointer;
-    font-size: 18px;
-    line-height: 1;
-    transition: all 0.2s ease;
-    width: 40px;
-    height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 10px;
+    padding-left: 2px;
   }
 
-  .icon-btn:hover {
-    background: #f0f0f0;
+  .track-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .action-icon-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: white;
+    border: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  }
+
+  .action-icon-btn:hover {
     transform: scale(1.1);
-  }
-
-  .icon-btn.local { background-color: #f0f0f0; font-size: 16px; }
-  .icon-btn.remote {
-    background-color: var(--primary-color);
-    color: white;
     border-color: var(--primary-color);
-  }
-  .icon-btn.offline {
-    background-color: #eee;
-    color: #ccc;
-    cursor: not-allowed;
-    border-color: #eee;
-  }
-  .icon-btn.cache.cached {
-    background-color: rgba(21, 112, 57, 0.1);
-    border-color: var(--primary-color);
-  }
-
-  .action-panel {
-    position: sticky;
-    bottom: 0;
-    margin-top: 10px;
-    z-index: 2000;
+    background: #f0f7f2;
   }
 
   .badge {
-    padding: 2px 6px;
-    border-radius: 4px;
+    padding: 4px 10px;
+    border-radius: 20px;
     font-size: 10px;
-    font-weight: bold;
+    font-weight: 900;
     color: white;
     text-transform: uppercase;
+    letter-spacing: 0.5px;
   }
 
-  .badge-default { background: #888; }
-  .badge-highlights { background: #f39c12; }
-  .badge-peli { background: #3498db; }
-  .badge-haastattelu { background: #9b59b6; }
+  .badge-default { background: #8e8e93; }
+  .badge-highlights { background: #ff9500; }
+  .badge-peli { background: var(--primary-color); }
+  .badge-haastattelu { background: #5856d6; }
+
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    background: #f8f9f7;
+    border-radius: 24px;
+    border: 2px dashed var(--border-color);
+    color: var(--text-sub);
+  }
+
+  .empty-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    opacity: 0.5;
+  }
+
+  .active-ripple {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(circle, var(--primary-color) 0%, transparent 70%);
+    opacity: 0.05;
+    pointer-events: none;
+  }
 </style>
 

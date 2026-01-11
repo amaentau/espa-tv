@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { fade, slide } from 'svelte/transition';
+  import { socialState } from '../lib/socialState.svelte.js';
 
   let { targetId, token, username, userEmail, onClose } = $props();
 
@@ -24,6 +25,9 @@
       const data = await res.json();
       comments = data.comments || [];
       reactions = data.reactions || {};
+      
+      // Update global social state
+      socialState.updateStats(targetId, data);
     } catch (err) {
       error = err.message;
     } finally {

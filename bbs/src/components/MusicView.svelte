@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { deviceState, playMedia } from '../lib/deviceState.svelte.js';
   import SocialSection from './SocialSection.svelte';
+  import { socialState } from '../lib/socialState.svelte.js';
   
   let { token, authState } = $props();
 
@@ -13,23 +14,22 @@
   async function loadLibrary() {
     loading = true;
     try {
-      // Fetch both Table Storage library AND Blob Storage files
-      const [tableRes, blobRes] = await Promise.all([
-        fetch('/library/SONG', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }),
-        fetch('/library/blob/song', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        })
-      ]);
+      // Fetch ONLY Blob Storage files
+      const res = await fetch('/library/blob/song', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
 
-      const tableTracks = await tableRes.json();
-      const blobTracks = await blobRes.json();
+      const blobTracks = await res.json();
 
       // Combine and sort by timestamp (newest first)
-      tracks = [...blobTracks, ...tableTracks].sort((a, b) => 
+      tracks = blobTracks.sort((a, b) => 
         new Date(b.timestamp) - new Date(a.timestamp)
       );
+
+      // Fetch social stats for each track
+      tracks.forEach(track => {
+        socialState.fetchStats(track.rowKey, token);
+      });
     } catch (err) {
       console.error('Failed to load music library:', err);
     } finally {
@@ -39,13 +39,13 @@
 
   onMount(loadLibrary);
 
-  function handlePlay(track, forceLocal = false) {
+  function handlePlay(track) {
     playMedia({
       title: track.title,
       url: track.url,
       type: 'SONG',
       rowKey: track.rowKey
-    }, forceLocal);
+    });
   }
 
   function openSocial(track) {
@@ -54,55 +54,73 @@
   }
 </script>
 
-<div class="music-view fade-in">
-  <div class="tracks-container">
-    <h3 style="margin-bottom: 16px; color: var(--primary-color);">Kirjaston Kappaleet</h3>
-    
-    {#if loading}
-      <div class="loader"></div>
-    {:else}
-      <div class="track-list">
-        {#each tracks as track}
-          <div class="track-item {deviceState.currentMedia?.rowKey === track.rowKey ? 'active' : ''}">
-            <div class="track-info">
-              <span class="track-title">{track.title}</span>
-              <span class="track-artist">Lähde: {track.creatorEmail}</span>
-            </div>
-            <div class="track-actions">
-              <button 
-                class="icon-btn social-btn" 
-                onclick={() => openSocial(track)} 
-                title="Kommentit ja reaktiot"
-              >
-                💬
-              </button>
-
-              <button 
-                class="icon-btn local" 
-                onclick={() => handlePlay(track, true)} 
-                title="Kuuntele tässä"
-              >
-                📱
-              </button>
-              
-              {#if deviceState.devices.length > 0}
-                <button 
-                  class="icon-btn {deviceState.isPiActive ? 'remote' : 'offline'}" 
-                  onclick={() => handlePlay(track, false)} 
-                  disabled={!deviceState.isPiActive}
-                  title={deviceState.isPiActive ? 'Toista soittimelle' : 'Soitin ei ole linjoilla'}
-                >
-                  ▶️
-                </button>
-              {/if}
-            </div>
-          </div>
-        {:else}
-          <div class="empty-state">Kirjastossa ei ole vielä musiikkia.</div>
-        {/each}
-      </div>
-    {/if}
+<div class="music-view">
+  <div class="view-header">
+    <h3 class="view-title">Musiikki</h3>
+    <p class="view-subtitle">Kirjaston kappaleet</p>
   </div>
+  
+  {#if loading}
+    <div class="loading-state">
+      <div class="loader"></div>
+      <p>Ladataan musiikkia...</p>
+    </div>
+  {:else}
+    <div class="track-list">
+      {#each tracks as track}
+        <div class="track-item-wrapper">
+          <button 
+            class="track-item {deviceState.currentMedia?.rowKey === track.rowKey ? 'active' : ''}" 
+            onclick={() => handlePlay(track)}
+          >
+            <div class="track-content">
+              <div class="track-info">
+                <span class="track-title">{track.title}</span>
+                <div class="track-meta">
+                  <span class="track-artist">Lähde: {track.creatorEmail.split('@')[0]}</span>
+                  
+                  {#if socialState.stats[track.rowKey]}
+                    <div class="social-summary">
+                      {#if socialState.stats[track.rowKey].commentCount > 0}
+                        <span class="stat-item">💬 {socialState.stats[track.rowKey].commentCount}</span>
+                      {/if}
+                      {#each Object.entries(socialState.stats[track.rowKey].reactions) as [emoji, count]}
+                        {#if count > 0}
+                          <span class="stat-item">{emoji} {count}</span>
+                        {/if}
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+              </div>
+              <div class="play-indicator">
+                <span class="play-icon">▶</span>
+              </div>
+            </div>
+            
+            {#if deviceState.currentMedia?.rowKey === track.rowKey}
+              <div class="active-ripple"></div>
+            {/if}
+          </button>
+          
+          <div class="track-actions">
+            <button 
+              class="action-icon-btn social" 
+              onclick={() => openSocial(track)}
+              title="Kommentit"
+            >
+              💬
+            </button>
+          </div>
+        </div>
+      {:else}
+        <div class="empty-state">
+          <div class="empty-icon">🎵</div>
+          <p>Kirjastossa ei ole vielä musiikkia.</p>
+        </div>
+      {/each}
+    </div>
+  {/if}
 
   {#if showSocial}
     <SocialSection 
@@ -117,64 +135,139 @@
 
 <style>
   .music-view {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    width: 100%;
-    padding-bottom: 80px; /* Space for global control bar */
+    padding-bottom: 40px;
+  }
+
+  .view-header {
+    margin-bottom: 24px;
+    text-align: center;
+  }
+
+  .view-title {
+    font-size: 28px;
+    font-weight: 900;
+    color: var(--primary-color);
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: -0.5px;
+  }
+
+  .view-subtitle {
+    font-size: 14px;
+    color: var(--text-sub);
+    margin: 4px 0 0 0;
+  }
+
+  .loading-state {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-sub);
   }
 
   .track-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
+  }
+
+  .track-item-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
   }
 
   .track-item {
     background: white;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-    padding: 12px 12px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-    transition: all 0.2s ease;
-    width: 100%;
-    min-width: 0;
+    border: 1.5px solid var(--border-color);
+    border-radius: 16px;
+    padding: 0;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    flex: 1;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
   }
 
   .track-item:hover {
+    transform: translateX(4px);
     border-color: var(--primary-color);
+    box-shadow: 0 8px 16px rgba(21, 112, 57, 0.1);
   }
 
   .track-item.active {
     border-color: var(--primary-color);
-    background: rgba(21, 112, 57, 0.05);
+    background: #f0f7f2;
+    box-shadow: 0 4px 12px rgba(21, 112, 57, 0.15);
+  }
+
+  .track-content {
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
   }
 
   .track-info {
     display: flex;
     flex-direction: column;
-    flex: 1;
     min-width: 0;
-    overflow: hidden;
+    flex: 1;
+    gap: 4px;
+  }
+
+  .track-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .social-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .stat-item {
+    font-size: 11px;
+    font-weight: 700;
+    background: rgba(0, 0, 0, 0.05);
+    padding: 1px 6px;
+    border-radius: 10px;
+    color: var(--text-main);
+    white-space: nowrap;
   }
 
   .track-title {
-    font-weight: 700;
-    font-size: 14px;
+    font-weight: 800;
+    font-size: 15px;
+    color: var(--text-main);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .track-artist {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--text-sub);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    opacity: 0.8;
+  }
+
+  .play-icon {
+    width: 32px;
+    height: 32px;
+    background: var(--primary-color);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    padding-left: 2px;
+    box-shadow: 0 4px 8px rgba(21, 112, 57, 0.2);
   }
 
   .track-actions {
@@ -182,54 +275,45 @@
     gap: 8px;
   }
 
-  @media (max-width: 380px) {
-    .track-item {
-      padding: 10px 12px;
-    }
-    
-    .icon-btn {
-      width: 36px;
-      height: 36px;
-      font-size: 16px;
-    }
-  }
-
-  .icon-btn {
-    background: none;
-    border: 1px solid var(--border-color);
-    padding: 8px;
+  .action-icon-btn {
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
-    cursor: pointer;
-    font-size: 18px;
-    line-height: 1;
-    transition: all 0.2s ease;
-    width: 40px;
-    height: 40px;
+    background: white;
+    border: 1px solid var(--border-color);
     display: flex;
     align-items: center;
     justify-content: center;
-  }
-
-  .icon-btn:hover {
-    background: #f0f0f0;
-    transform: scale(1.1);
-  }
-
-  .icon-btn.local {
-    background-color: #f0f0f0;
     font-size: 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
   }
 
-  .icon-btn.remote {
-    background-color: var(--primary-color);
-    color: white;
+  .action-icon-btn:hover {
+    transform: scale(1.1);
     border-color: var(--primary-color);
   }
 
-  .icon-btn.offline {
-    background-color: #eee;
-    color: #ccc;
-    cursor: not-allowed;
-    border-color: #eee;
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    background: #f8f9f7;
+    border-radius: 24px;
+    border: 2px dashed var(--border-color);
+    color: var(--text-sub);
+  }
+
+  .empty-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    opacity: 0.5;
+  }
+
+  .active-ripple {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(circle, var(--primary-color) 0%, transparent 70%);
+    opacity: 0.05;
+    pointer-events: none;
   }
 </style>

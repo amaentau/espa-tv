@@ -1,5 +1,5 @@
 <script>
-  let { authState, onLogout, onOpenAdmin } = $props();
+  let { authState, onOpenAdmin } = $props();
 </script>
 
 <div class="settings-view fade-in">
@@ -34,10 +34,6 @@
         </button>
       </div>
     {/if}
-
-    <button class="logout-btn-large" onclick={onLogout}>
-      Kirjaudu ulos
-    </button>
   </div>
 </div>
 
@@ -109,19 +105,6 @@
     padding: 12px;
     font-weight: 600;
     margin-top: 8px;
-  }
-
-  .logout-btn-large {
-    background: white;
-    color: #d13438;
-    border: 1px solid #d13438;
-    padding: 14px;
-    font-weight: 700;
-    margin-top: 10px;
-  }
-
-  .logout-btn-large:hover {
-    background: #fff5f5;
   }
 </style>
 

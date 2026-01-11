@@ -17,7 +17,20 @@
   let metadata = $state({ gameGroups: [], eventTypes: [] });
   let showAdminModal = $state(false);
   let historyRefreshTrigger = $state(0);
-  let activeView = $state('producer'); // Default to producer view for now
+  let activeView = $state('tv'); // Default to Espa TV view after login
+
+  // Helper to check if user has access to a specific view
+  const canAccess = (view) => {
+    if (view !== 'producer') return true;
+    return authState.isAdmin || authState.userGroup === 'Veo Ylläpitäjä';
+  };
+
+  // If activeView is set to something user cannot access, fallback to 'tv'
+  $effect(() => {
+    if (!canAccess(activeView)) {
+      activeView = 'tv';
+    }
+  });
 
   async function loadMetadata() {
     try {
@@ -77,7 +90,6 @@
     {:else if activeView === 'settings'}
       <SettingsView 
         {authState} 
-        onLogout={onLogout} 
         onOpenAdmin={() => showAdminModal = true}
       />
     {:else if activeView === 'tv'}

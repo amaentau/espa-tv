@@ -148,14 +148,15 @@
       const isM4a = file.name.toLowerCase().endsWith('.m4a');
       const isMp3 = file.name.toLowerCase().endsWith('.mp3');
       const isOpus = file.name.toLowerCase().endsWith('.opus');
+      const isMPEG = file.name.toLowerCase().endsWith('.mpeg');
       
-      if (!isAudio && !isWebm && !isM4a && !isMp3 && !isOpus) {
+      if (!isAudio && !isWebm && !isM4a && !isMp3 && !isOpus && !isMPEG) {
         console.log('File type check failed:', {
           name: file.name,
           type: file.type,
-          isAudio, isWebm, isM4a, isMp3, isOpus
+          isAudio, isWebm, isM4a, isMp3, isOpus, isMPEG
         });
-        return setStatus('Vain äänitiedostot (mp3, m4a, webm, opus) ovat sallittuja.', 'error');
+        return setStatus('Vain äänitiedostot (mp3, m4a, webm, opus, mpeg) ovat sallittuja.', 'error');
       }
     }
 

@@ -107,15 +107,34 @@
     if (username.length < 3) return setStatus('Käyttäjänimen on oltava vähintään 3 merkkiä');
     if (pin.length !== 4) return setStatus('PIN-koodin on oltava 4 numeroa');
     loading = true;
+
+    // Get or generate device ID
+    let deviceId = localStorage.getItem('espa_device_id');
+    if (!deviceId) {
+      deviceId = (typeof crypto !== 'undefined' && crypto.randomUUID) 
+        ? crypto.randomUUID() 
+        : Math.random().toString(36).substring(2) + Date.now().toString(36);
+      localStorage.setItem('espa_device_id', deviceId);
+    }
+
     try {
       const res = await fetch('/auth/set-pin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin, setupToken, username })
+        body: JSON.stringify({ pin, setupToken, username, deviceId })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      onLoginSuccess(data);
+
+      if (data.isApproved === false) {
+        setStatus('Tili luotu! Ylläpitäjän on vielä hyväksyttävä tilisi ennen käyttöä.', 'info');
+        currentStep = 'lookup';
+        email = '';
+        pin = '';
+        username = '';
+      } else {
+        onLoginSuccess(data);
+      }
     } catch (err) {
       setStatus(err.message || 'Virhe tallennuksessa');
     } finally {
@@ -126,11 +145,21 @@
   async function handleLogin() {
     if (pin.length !== 4) return setStatus('Syötä 4-numeroinen PIN');
     loading = true;
+
+    // Get or generate device ID
+    let deviceId = localStorage.getItem('espa_device_id');
+    if (!deviceId) {
+      deviceId = (typeof crypto !== 'undefined' && crypto.randomUUID) 
+        ? crypto.randomUUID() 
+        : Math.random().toString(36).substring(2) + Date.now().toString(36);
+      localStorage.setItem('espa_device_id', deviceId);
+    }
+
     try {
       const res = await fetch('/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, pin })
+        body: JSON.stringify({ email, pin, deviceId })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -396,11 +425,7 @@
     background: rgba(21, 112, 57, 0.1);
     color: var(--primary-color);
   }
-</style>
 
-<div class="bg-animation"></div>
-
-<style>
   :global(body) {
     overflow: hidden;
   }
@@ -425,4 +450,6 @@
     100% { transform: rotate(360deg); }
   }
 </style>
+
+<div class="bg-animation"></div>
 

@@ -8,10 +8,15 @@ export const deviceState = $state({
   
   // Playback state
   currentMedia: null, // { title, url, type, rowKey, metadata }
-  playbackLocation: 'local', // 'local' or 'remote'
+  playbackTarget: localStorage.getItem('espa_playback_target') || 'browser', // 'browser' or deviceId
   
   // Derived state
   get activeDevice() {
+    // If playbackTarget is a device ID, that's our active device
+    if (this.playbackTarget !== 'browser') {
+      return this.devices.find(d => d.id === this.playbackTarget);
+    }
+    // Fallback to last active if target is browser but we want to know "selected" device
     return this.devices.find(d => d.id === this.activeDeviceId);
   },
   
@@ -20,7 +25,8 @@ export const deviceState = $state({
   },
 
   get isPiActive() {
-    return this.activeDevice && this.activeDevice.iotStatus === 'Connected';
+    const dev = this.activeDevice;
+    return dev && dev.iotStatus === 'Connected';
   }
 });
 
@@ -49,15 +55,21 @@ export async function refreshDevices() {
 
     deviceState.devices = devicesWithStatus;
 
-    // Set default active device if none selected
-    const online = devicesWithStatus.filter(d => d.iotStatus === 'Connected');
-    if (!deviceState.activeDeviceId && online.length > 0) {
-      setActiveDevice(online[0].id);
-    } else if (!deviceState.activeDeviceId && devicesWithStatus.length > 0) {
-      setActiveDevice(devicesWithStatus[0].id);
+    // Validate playbackTarget
+    if (deviceState.playbackTarget !== 'browser' && !devicesWithStatus.find(d => d.id === deviceState.playbackTarget)) {
+      setPlaybackTarget('browser');
     }
   } catch (err) {
     console.error('Failed to refresh devices:', err);
+  }
+}
+
+export function setPlaybackTarget(target) {
+  deviceState.playbackTarget = target;
+  localStorage.setItem('espa_playback_target', target);
+  if (target !== 'browser') {
+    deviceState.activeDeviceId = target;
+    localStorage.setItem('espa_active_device_id', target);
   }
 }
 
@@ -67,9 +79,10 @@ export function setActiveDevice(id) {
 }
 
 export async function sendCommand(command, payload = {}) {
-  if (!deviceState.activeDeviceId) return;
+  const targetId = deviceState.playbackTarget === 'browser' ? deviceState.activeDeviceId : deviceState.playbackTarget;
+  if (!targetId) return;
   try {
-    const res = await fetch(`/devices/${encodeURIComponent(deviceState.activeDeviceId)}/commands/${command}`, {
+    const res = await fetch(`/devices/${encodeURIComponent(targetId)}/commands/${command}`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -84,7 +97,7 @@ export async function sendCommand(command, payload = {}) {
   }
 }
 
-export async function playMedia(media, forceLocal = false) {
+export async function playMedia(media) {
   deviceState.currentMedia = media;
   
   // Start transparent caching in the background if it's a song or video
@@ -92,17 +105,25 @@ export async function playMedia(media, forceLocal = false) {
     preCacheMedia(media.url).catch(err => console.error('Background caching failed:', err));
   }
   
-  if (forceLocal) {
+  if (deviceState.playbackTarget === 'browser') {
     deviceState.playbackLocation = 'local';
+    // If it's a VEO stream or something that should open in a new tab, we do it here
+    if (media.type === 'VEO' || media.type === 'URL') {
+      window.open(media.url, '_blank');
+      deviceState.currentMedia = null; // Don't show in control bar if opened in new tab
+    }
     return;
   }
 
-  if (deviceState.isPiActive) {
-    deviceState.playbackLocation = 'remote';
+  // Remote playback
+  deviceState.playbackLocation = 'remote';
+  const targetId = deviceState.playbackTarget;
+  const targetDevice = deviceState.devices.find(d => d.id === targetId);
+
+  if (targetDevice?.iotStatus === 'Connected') {
     // Immediate playback via IoT direct method
     await sendCommand('load_url', { url: media.url });
-  } else if (deviceState.activeDeviceId) {
-    deviceState.playbackLocation = 'remote';
+  } else {
     // Fallback: Send to BBS for auto-play on boot
     await fetch('/entry', {
       method: 'POST',
@@ -111,14 +132,12 @@ export async function playMedia(media, forceLocal = false) {
         'Authorization': `Bearer ${deviceState.token}`
       },
       body: JSON.stringify({ 
-        key: deviceState.activeDeviceId, 
+        key: targetId, 
         value1: media.url, 
         value2: media.title,
         eventType: media.type || 'MEDIA'
       })
     });
-  } else {
-    deviceState.playbackLocation = 'local';
   }
 }
 

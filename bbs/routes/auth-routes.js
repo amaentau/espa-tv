@@ -189,15 +189,24 @@ router.post('/set-pin', async (req, res) => {
       systemId,
       username,
       isAdmin: makeAdmin,
+      isApproved: makeAdmin, // First user is auto-approved
       failedAttempts: 0,
-      lockedUntil: 0
+      lockedUntil: 0,
+      devices: JSON.stringify([])
     });
+
+    // If not approved, we don't return a full token yet, or we return a restricted one.
+    // The user said: "after user name, pin and email are in place, I would still need to enable the account"
+    // So we can still return a token but it will be rejected by other routes if not approved.
+    // Or we just return success but no token if not approved.
+    // Let's return a token but with isApproved: false.
 
     const token = jwt.sign({ 
       email, 
       systemId,
       username,
       isAdmin: makeAdmin,
+      isApproved: makeAdmin,
       userGroup: makeAdmin ? 'Ylläpitäjä' : null
     }, JWT_SECRET, { expiresIn: '180d' });
 
@@ -208,6 +217,7 @@ router.post('/set-pin', async (req, res) => {
       systemId,
       username,
       isAdmin: makeAdmin,
+      isApproved: makeAdmin,
       userGroup: makeAdmin ? 'Ylläpitäjä' : null
     });
 
@@ -219,7 +229,7 @@ router.post('/set-pin', async (req, res) => {
 
 // 5. Login
 router.post('/login', async (req, res) => {
-  const { email, pin } = req.body;
+  const { email, pin, deviceId } = req.body;
   if (!email || !pin) return res.status(400).json({ error: 'Missing fields' });
 
   try {
@@ -229,6 +239,10 @@ router.post('/login', async (req, res) => {
     if (user.lockedUntil && Date.now() < user.lockedUntil) {
       const waitMinutes = Math.ceil((user.lockedUntil - Date.now()) / 60000);
       return res.status(429).json({ error: `Account locked. Try again in ${waitMinutes} minutes.` });
+    }
+
+    if (user.isApproved === false) {
+      return res.status(403).json({ error: 'Account pending approval.' });
     }
 
     const match = await bcrypt.compare(pin, user.pinHash);
@@ -248,6 +262,28 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: attempts >= 3 ? 'Locked. Too many failed attempts.' : 'Invalid PIN' });
     }
 
+    // Device check
+    if (deviceId) {
+      let devices = [];
+      try {
+        devices = JSON.parse(user.devices || '[]');
+      } catch (e) {
+        devices = [];
+      }
+
+      if (!devices.includes(deviceId)) {
+        if (devices.length >= 3) {
+          return res.status(403).json({ error: 'Maximum device limit (3) reached for this account.' });
+        }
+        devices.push(deviceId);
+        await client.updateEntity({
+          partitionKey: email,
+          rowKey: 'profile',
+          devices: JSON.stringify(devices)
+        }, "Merge");
+      }
+    }
+
     // Success
     if (user.failedAttempts > 0) {
       await client.updateEntity({ partitionKey: email, rowKey: 'profile', failedAttempts: 0, lockedUntil: 0 }, "Merge");
@@ -265,6 +301,7 @@ router.post('/login', async (req, res) => {
       systemId,
       username: user.username,
       isAdmin: !!user.isAdmin,
+      isApproved: user.isApproved !== false,
       userGroup: user.userGroup || (user.isAdmin ? 'Ylläpitäjä' : null)
     }, JWT_SECRET, { expiresIn: '180d' });
 
@@ -275,6 +312,7 @@ router.post('/login', async (req, res) => {
       systemId,
       username: user.username,
       isAdmin: !!user.isAdmin,
+      isApproved: user.isApproved !== false,
       userGroup: user.userGroup || (user.isAdmin ? 'Ylläpitäjä' : null)
     });
 
@@ -297,7 +335,9 @@ router.get('/users', authenticateToken, async (req, res) => {
         email: user.partitionKey,
         username: user.username,
         isAdmin: !!user.isAdmin,
-        userGroup: user.userGroup || (user.isAdmin ? 'Ylläpitäjä' : null)
+        isApproved: user.isApproved !== false,
+        userGroup: user.userGroup || (user.isAdmin ? 'Ylläpitäjä' : null),
+        deviceCount: JSON.parse(user.devices || '[]').length
       });
     }
     return res.json(users);
@@ -311,17 +351,41 @@ router.get('/users', authenticateToken, async (req, res) => {
 router.patch('/users/:email', authenticateToken, async (req, res) => {
   if (!req.user.isAdmin) return res.sendStatus(403);
   const { email } = req.params;
-  const { userGroup, isAdmin } = req.body;
+  const { userGroup, isAdmin, isApproved, resetDevices } = req.body;
 
   try {
     const client = getTableClient(TABLE_NAME_USERS);
     const user = await client.getEntity(email, 'profile');
     
-    await client.updateEntity({
+    const wasApproved = user.isApproved !== false;
+    const nowApproved = typeof isApproved === 'boolean' ? isApproved : wasApproved;
+
+    const updatedUser = {
       ...user,
-      userGroup: userGroup || null,
-      isAdmin: typeof isAdmin === 'boolean' ? isAdmin : !!user.isAdmin
-    }, "Replace");
+      userGroup: userGroup !== undefined ? (userGroup || null) : user.userGroup,
+      isAdmin: typeof isAdmin === 'boolean' ? isAdmin : !!user.isAdmin,
+      isApproved: nowApproved
+    };
+
+    if (resetDevices) {
+      updatedUser.devices = JSON.stringify([]);
+    }
+
+    await client.updateEntity(updatedUser, "Replace");
+
+    // Send notification if account was just approved
+    if (!wasApproved && nowApproved) {
+      try {
+        await sendEmail(
+          email, 
+          'ESPA TV: Tilisi on hyväksytty!', 
+          `Hei ${user.username || 'käyttäjä'}! Tilisi on nyt hyväksytty. Voit kirjautua sisään käyttämällä sähköpostiosoitettasi ja luomaasi PIN-koodia.`
+        );
+      } catch (emailErr) {
+        console.error('Failed to send approval email:', emailErr);
+        // We don't fail the whole request if email fails, but we log it
+      }
+    }
 
     return res.json({ ok: true });
   } catch (err) {
