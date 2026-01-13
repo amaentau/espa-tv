@@ -264,6 +264,7 @@
     justify-content: space-between;
     align-items: center;
     margin-bottom: 16px;
+    flex-shrink: 0;
   }
 
   .close-btn {
@@ -281,6 +282,7 @@
     border-bottom: 1px solid var(--border-color);
     overflow-x: auto;
     scrollbar-width: none;
+    flex-shrink: 0;
   }
   .tabs-container::-webkit-scrollbar { display: none; }
 
@@ -364,12 +366,18 @@
   .user-email {
     color: var(--text-sub);
     font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .user-role {
     font-size: 11px;
     color: #666;
     margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .user-actions {
@@ -377,6 +385,28 @@
     flex-direction: column;
     gap: 8px;
     align-items: flex-end;
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 480px) {
+    .user-item {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 12px;
+    }
+    
+    .user-actions {
+      align-items: stretch;
+    }
+
+    .action-row {
+      justify-content: space-between;
+    }
+
+    .user-actions select {
+      flex: 1;
+      min-width: 0;
+    }
   }
 
   .action-row {

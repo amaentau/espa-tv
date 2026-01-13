@@ -67,9 +67,17 @@
     font-weight: 800;
   }
 
+  .user-details {
+    min-width: 0;
+    flex: 1;
+  }
+
   .user-details h3 {
     margin: 0;
     font-size: 18px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .role-badge {
@@ -77,6 +85,7 @@
     background: rgba(255,255,255,0.2);
     padding: 2px 8px;
     border-radius: 10px;
+    white-space: nowrap;
   }
 
   .settings-list {
