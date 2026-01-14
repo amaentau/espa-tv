@@ -1,42 +1,32 @@
 <script>
-  import DeviceSelector from './DeviceSelector.svelte';
+  import { deviceState } from '../lib/deviceState.svelte.js';
   import EntryForm from './EntryForm.svelte';
-  import IotControls from './IotControls.svelte';
   import History from './History.svelte';
 
-  let { authState, onLogout, devices, selectedDeviceId = $bindable(), targetDeviceIds = $bindable(), metadata, onDevicesChanged, historyRefreshTrigger, refreshHistory } = $props();
+  let { authState, metadata, historyRefreshTrigger, refreshHistory } = $props();
+
+  let selectedContentType = $state('veo');
 </script>
 
 <div class="producer-view fade-in">
   <div class="card">
-    <DeviceSelector 
-      {devices} 
-      bind:selectedDeviceId 
-      bind:targetDeviceIds 
-      token={authState.token}
-      onDevicesChanged={onDevicesChanged}
-    />
-
     <EntryForm 
       {metadata} 
-      {targetDeviceIds} 
       token={authState.token} 
+      {authState}
       onEntryAdded={refreshHistory}
+      bind:contentType={selectedContentType}
     />
   </div>
 
-  <IotControls 
-    deviceId={selectedDeviceId} 
-    token={authState.token} 
-  />
-
   <History 
-    deviceId={selectedDeviceId} 
+    deviceId={deviceState.activeDeviceId} 
     token={authState.token} 
     isAdmin={authState.isAdmin}
     userGroup={authState.userGroup}
     username={authState.username}
     refreshTrigger={historyRefreshTrigger}
+    filterType={selectedContentType}
   />
 </div>
 

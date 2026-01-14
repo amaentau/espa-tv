@@ -66,14 +66,18 @@
   }
 
   const barHeightClass = $derived(() => {
-    if (!deviceState.currentMedia) return 'h-utility';
-    if (deviceState.isAnchored) return 'h-control';
-    if (deviceState.currentMedia.type === 'VIDEO') return 'h-immersive';
-    return 'h-performance';
+    if (deviceState.currentMedia) {
+      if (deviceState.isAnchored) return 'h-control';
+      if (deviceState.currentMedia.type === 'VIDEO') return 'h-immersive';
+      return 'h-performance';
+    }
+    // If a device is selected and online, show a slightly taller bar for controls
+    if (deviceState.playbackTarget !== 'browser' && deviceState.isPiActive) return 'h-control';
+    return 'h-utility';
   });
 </script>
 
-<div class="global-control-bar {barHeightClass()} {deviceState.currentMedia ? 'active' : ''} {deviceState.devices.length > 0 ? 'has-devices' : ''}">
+<div class="global-control-bar {barHeightClass()} {(deviceState.currentMedia || (deviceState.playbackTarget !== 'browser' && deviceState.isPiActive)) ? 'active' : ''} {deviceState.devices.length > 0 ? 'has-devices' : ''}">
   
   {#if deviceState.currentMedia}
     <!-- Glow Line Seeker -->
@@ -98,7 +102,7 @@
           </span>
           <span class="media-title">{deviceState.currentMedia.title}</span>
         {:else if deviceState.devices.length > 0}
-          <span class="now-playing-label">Valitse soitin:</span>
+          <span class="now-playing-label">Valittu soitin:</span>
           <div class="device-mini-selector">
             <span class="status-dot {deviceState.playbackTarget === 'browser' ? 'browser' : (deviceState.activeDevice?.iotStatus === 'Connected' ? 'online' : 'offline')}"></span>
             <select 
@@ -110,13 +114,16 @@
                 <option value={dev.id}>{dev.friendlyName || dev.id}</option>
               {/each}
             </select>
+            {#if deviceState.playbackTarget !== 'browser' && deviceState.activeDevice?.iotStatus !== 'Connected'}
+              <span class="offline-hint">(Offline - Jonotus käytössä)</span>
+            {/if}
           </div>
         {/if}
       </div>
     </div>
 
     <div class="right-section">
-      {#if deviceState.currentMedia}
+      {#if deviceState.currentMedia || (deviceState.playbackTarget !== 'browser' && deviceState.isPiActive)}
         <div class="playback-controls">
           {#if deviceState.isPaused}
             <button class="play-btn" onclick={() => handleCommand('play')}>▶</button>
@@ -124,11 +131,13 @@
             <button class="play-btn pause" onclick={() => handleCommand('pause')}>II</button>
           {/if}
           
-          {#if deviceState.currentMedia.type === 'VIDEO'}
-            <button class="fs-btn" onclick={() => handleCommand('fullscreen')}>📺</button>
+          {#if deviceState.currentMedia?.type === 'VIDEO' || (deviceState.playbackTarget !== 'browser' && deviceState.isPiActive)}
+            <button class="fs-btn" style="display: flex;" onclick={() => handleCommand('fullscreen')}>📺</button>
           {/if}
         </div>
-        <button class="close-btn" onclick={closeMedia}>✕</button>
+        {#if deviceState.currentMedia}
+          <button class="close-btn" onclick={closeMedia}>✕</button>
+        {/if}
       {/if}
     </div>
   </div>
@@ -204,8 +213,8 @@
   }
 
   .media-dock-trigger {
-    width: 100px;
-    height: 56px;
+    width: 60px; /* Reduced for smaller space if no media */
+    height: 40px;
     flex-shrink: 0;
     background: rgba(0,0,0,0.05);
     border-radius: 8px;
@@ -246,6 +255,7 @@
   .playback-controls {
     display: flex;
     gap: 8px;
+    align-items: center;
   }
 
   .play-btn {
@@ -272,13 +282,6 @@
     cursor: pointer;
     color: var(--text-sub);
     padding: 8px;
-    display: none; /* Hidden by default (mobile) */
-  }
-
-  @media (min-width: 768px) {
-    .fs-btn {
-      display: flex; /* Only show on desktop/tablet */
-    }
   }
 
   .close-btn {
@@ -294,6 +297,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    max-width: 100%;
   }
 
   .device-mini-selector select {
@@ -303,12 +307,21 @@
     font-weight: 700;
     color: var(--text-main);
     outline: none;
+    max-width: 150px;
+  }
+
+  .offline-hint {
+    font-size: 10px;
+    color: #dc3545;
+    font-weight: 600;
+    white-space: nowrap;
   }
 
   .status-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
+    flex-shrink: 0;
   }
   .status-dot.online { background: #28a745; }
   .status-dot.offline { background: #dc3545; }

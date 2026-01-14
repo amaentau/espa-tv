@@ -7,6 +7,16 @@ const { authenticateToken } = require('../middleware/auth');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+// Helper to check if user can upload/add specific content type
+function canUserManageType(user, type) {
+  if (user.isAdmin) return true;
+  const normalizedType = (type || '').toUpperCase();
+  if (user.userGroup === 'Veo Ylläpitäjä') {
+    return normalizedType === 'VEO';
+  }
+  return false;
+}
+
 // 1. GET /library/:type - Fetch content by type (SONG, VIDEO, IMAGE, VEO)
 router.get('/:type', authenticateToken, async (req, res) => {
   try {
@@ -59,6 +69,11 @@ router.get('/blob/:type', authenticateToken, async (req, res) => {
 router.post('/blob/upload/:type', authenticateToken, upload.single('file'), async (req, res) => {
   try {
     const { type } = req.params;
+    
+    if (!canUserManageType(req.user, type)) {
+      return res.status(403).json({ error: 'No permission to upload this content type' });
+    }
+
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
@@ -78,6 +93,10 @@ router.post('/', authenticateToken, async (req, res) => {
   try {
     const { type, url, title, metadata, tags, hubId } = req.body;
     
+    if (!canUserManageType(req.user, type)) {
+      return res.status(403).json({ error: 'No permission to add this content type' });
+    }
+
     if (!type || !url || !title) {
       return res.status(400).json({ error: 'type, url, and title are required' });
     }

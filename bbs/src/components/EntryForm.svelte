@@ -1,7 +1,7 @@
 <script>
-  let { metadata, targetDeviceIds, token, onEntryAdded } = $props();
+  import { deviceState } from '../lib/deviceState.svelte.js';
+  let { metadata, token, authState, onEntryAdded, contentType = $bindable() } = $props();
 
-  let contentType = $state('veo'); // veo, song, video, image
   let videoUrl = $state('');
   let videoTitle = $state('');
   let gameGroup = $state('');
@@ -15,13 +15,27 @@
   let loading = $state(false);
   let isDragging = $state(false);
   let fileInput = $state(null);
+  let selectedFile = $state(null);
 
-  const contentTypes = [
-    { id: 'veo', label: 'Veo Linkki', icon: '⚽' },
-    { id: 'song', label: 'Kappale', icon: '🎵' },
-    { id: 'video', label: 'Video', icon: '🎬' },
-    { id: 'image', label: 'Kuva', icon: '🖼️' }
+  const allContentTypes = [
+    { id: 'veo', label: 'Veo Linkki', icon: '⚽', roles: ['ADMIN', 'Veo Ylläpitäjä'] },
+    { id: 'song', label: 'Kappale', icon: '🎵', roles: ['ADMIN'] },
+    { id: 'video', label: 'Video', icon: '🎬', roles: ['ADMIN'] },
+    { id: 'image', label: 'Kuva', icon: '🖼️', roles: ['ADMIN'] }
   ];
+
+  // Filter content types based on user role
+  const contentTypes = $derived(allContentTypes.filter(t => {
+    if (authState.isAdmin) return true;
+    return t.roles.includes(authState.userGroup);
+  }));
+
+  // Ensure selected contentType is valid for user
+  $effect(() => {
+    if (contentTypes.length > 0 && !contentTypes.find(t => t.id === contentType)) {
+      contentType = contentTypes[0].id;
+    }
+  });
 
   // Set defaults from metadata or localStorage
   $effect(() => {
@@ -42,163 +56,122 @@
   };
 
   async function handleSend() {
-    if (targetDeviceIds.length === 0) return setStatus('Valitse vähintään yksi laite');
-    if (!videoUrl) return setStatus('Syötä osoite (URL)');
+    const targetDeviceId = deviceState.activeDeviceId;
+    if (!targetDeviceId) return setStatus('Valitse aktiivinen laite alavalikosta');
+    if (!videoUrl && !selectedFile) return setStatus('Syötä osoite tai valitse tiedosto');
 
     loading = true;
-    setStatus('Lähetetään...', 'info');
+    setStatus('Käsitellään...', 'info');
 
-    let successCount = 0;
-    let errors = [];
-
+    let finalUrl = videoUrl;
     let finalTitle = videoTitle.trim();
-    if (contentType === 'veo') {
-      finalTitle = finalTitle || `${gameGroup} vs ${opponent || '???'}`;
-    } else {
-      const typeLabel = contentTypes.find(t => t.id === contentType).label;
-      finalTitle = finalTitle || `${typeLabel}: ${videoUrl.split('/').pop()}`;
-    }
 
-    for (const deviceId of targetDeviceIds) {
-      try {
-        // 1. Save to Global Library (only once)
-        if (deviceId === targetDeviceIds[0]) {
-          const libPayload = {
-            type: contentType === 'veo' ? 'VEO' : contentType.toUpperCase(),
-            url: videoUrl,
-            title: finalTitle,
-            metadata: contentType === 'veo' ? {
-              gameGroup,
-              opponent,
-              isHome,
-              scoreHome,
-              scoreAway,
-              eventType
-            } : {}
-          };
+    try {
+      // 1. If we have a file, upload it now
+      if (selectedFile) {
+        setStatus(`Ladataan tiedostoa: ${selectedFile.name}...`, 'info');
+        const formData = new FormData();
+        formData.append('file', selectedFile);
 
-          await fetch('/library', {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify(libPayload)
-          });
-        }
-
-        // 2. Play on Device(s)
-        const payload = { 
-          key: deviceId, 
-          value1: videoUrl, 
-          value2: finalTitle,
-          eventType: contentType === 'veo' ? eventType : contentType.toUpperCase()
-        };
-
-        if (contentType === 'veo') {
-          Object.assign(payload, {
-            gameGroup,
-            opponent,
-            isHome,
-            scoreHome,
-            scoreAway
-          });
-        }
-
-        const res = await fetch('/entry', {
+        const uploadRes = await fetch(`/library/blob/upload/${contentType}`, {
           method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify(payload)
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
         });
 
-        if (!res.ok) throw new Error((await res.json()).error || 'Virhe');
-        successCount++;
-      } catch (err) {
-        errors.push(`${deviceId}: ${err.message}`);
+        if (!uploadRes.ok) throw new Error('Tiedoston lataus epäonnistui');
+        const uploadData = await uploadRes.json();
+        
+        // Construct the blob URL (backend should return full path ideally, but we know our pattern)
+        finalUrl = `https://${window.location.hostname}/blobs/${contentType}/${uploadData.filename}`;
+        if (!finalTitle) finalTitle = selectedFile.name;
       }
-    }
 
-    if (successCount > 0) {
-      setStatus(`Lisätty onnistuneesti ${successCount} laitteelle!`, 'success');
+      // 2. Add to Global Library
+      const typeLabel = allContentTypes.find(t => t.id === contentType).label;
+      if (contentType === 'veo') {
+        finalTitle = finalTitle || `${gameGroup} vs ${opponent || '???'}`;
+      } else {
+        finalTitle = finalTitle || `${typeLabel}: ${finalUrl.split('/').pop()}`;
+      }
+
+      const libPayload = {
+        type: contentType === 'veo' ? 'VEO' : contentType.toUpperCase(),
+        url: finalUrl,
+        title: finalTitle,
+        metadata: contentType === 'veo' ? {
+          gameGroup, opponent, isHome, scoreHome, scoreAway, eventType
+        } : {}
+      };
+
+      await fetch('/library', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(libPayload)
+      });
+
+      // 3. Play on Device
+      const payload = { 
+        key: targetDeviceId, 
+        value1: finalUrl, 
+        value2: finalTitle,
+        eventType: contentType === 'veo' ? eventType : contentType.toUpperCase()
+      };
+
+      if (contentType === 'veo') {
+        Object.assign(payload, { gameGroup, opponent, isHome, scoreHome, scoreAway });
+      }
+
+      const res = await fetch('/entry', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) throw new Error((await res.json()).error || 'Virhe');
+
+      setStatus(`Lisätty onnistuneesti!`, 'success');
       videoUrl = '';
       videoTitle = '';
       opponent = '';
       scoreHome = '';
       scoreAway = '';
+      selectedFile = null;
+      if (fileInput) fileInput.value = '';
       onEntryAdded();
-    }
 
-    if (errors.length > 0) {
-      alert("Joitakin virheitä tapahtui:\n" + errors.join("\n"));
+    } catch (err) {
+      setStatus(`Virhe: ${err.message}`, 'error');
+    } finally {
+      loading = false;
     }
-    loading = false;
   }
 
-  async function handleFileUpload(files) {
+  function handleFileSelect(files) {
     if (!files || files.length === 0) return;
     const file = files[0];
     
-    // Check if it's an audio file for the song type
     if (contentType === 'song') {
-      const isAudio = file.type.startsWith('audio/');
-      const isWebm = file.type.includes('webm') || file.name.toLowerCase().endsWith('.webm');
-      const isM4a = file.name.toLowerCase().endsWith('.m4a');
-      const isMp3 = file.name.toLowerCase().endsWith('.mp3');
-      const isOpus = file.name.toLowerCase().endsWith('.opus');
-      const isMPEG = file.name.toLowerCase().endsWith('.mpeg');
-      
-      if (!isAudio && !isWebm && !isM4a && !isMp3 && !isOpus && !isMPEG) {
-        console.log('File type check failed:', {
-          name: file.name,
-          type: file.type,
-          isAudio, isWebm, isM4a, isMp3, isOpus, isMPEG
-        });
-        return setStatus('Vain äänitiedostot (mp3, m4a, webm, opus, mpeg) ovat sallittuja.', 'error');
-      }
+      const allowed = ['audio/', 'video/webm', '.webm', '.m4a', '.mp3', '.opus', '.mpeg'];
+      const isAllowed = allowed.some(ext => file.type.startsWith(ext) || file.name.toLowerCase().endsWith(ext.replace('.', '')));
+      if (!isAllowed) return setStatus('Vain äänitiedostot ovat sallittuja.', 'error');
     }
-
-    loading = true;
-    setStatus(`Ladataan tiedostoa: ${file.name}...`, 'info');
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      const res = await fetch(`/library/blob/upload/${contentType}`, {
-        method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      });
-
-      if (!res.ok) throw new Error('Lataus epäonnistui');
-      
-      const data = await res.json();
-      setStatus(`Tiedosto "${file.name}" ladattu onnistuneesti!`, 'success');
-      
-      // If it was a song or video, we can clear the URL field or trigger a refresh
-      if (contentType === 'song' || contentType === 'video') {
-        videoUrl = ''; // Clear URL if they were typing one
-      }
-      
-      onEntryAdded(); // Refresh history/library
-    } catch (err) {
-      setStatus(`Latausvirhe: ${err.message}`, 'error');
-    } finally {
-      loading = false;
-      if (fileInput) fileInput.value = ''; // Reset input
-    }
+    
+    selectedFile = file;
+    setStatus(`Tiedosto "${file.name}" valittu. Paina Lisää tallentaaksesi.`, 'info');
   }
 
   function handleDrop(e) {
     e.preventDefault();
     isDragging = false;
-    if (contentType === 'song' || contentType === 'image' || contentType === 'video') {
-      handleFileUpload(e.dataTransfer.files);
+    if (['song', 'image', 'video'].includes(contentType)) {
+      handleFileSelect(e.dataTransfer.files);
     }
   }
 
@@ -231,10 +204,13 @@
     
     {#if contentType === 'song' || contentType === 'image' || contentType === 'video'}
       <div 
-        class="upload-zone {isDragging ? 'dragging' : ''}"
+        class="upload-zone {isDragging ? 'dragging' : ''} {selectedFile ? 'has-file' : ''}"
         onragover={(e) => { e.preventDefault(); isDragging = true; }}
         onragleave={() => isDragging = false}
         ondrop={handleDrop}
+        role="button"
+        tabindex="0"
+        onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); }}
       >
         <input 
           id="videoUrl" 
@@ -242,6 +218,7 @@
           bind:value={videoUrl} 
           placeholder="https://..."
           style="border:none; background:transparent; margin-bottom:0;"
+          disabled={!!selectedFile}
         >
         <div class="upload-divider">tai</div>
         <button 
@@ -250,16 +227,20 @@
           onclick={() => fileInput.click()}
           disabled={loading}
         >
-          📁 Valitse tiedosto
+          {selectedFile ? '🔄 Vaihda tiedosto' : '📁 Valitse tiedosto'}
         </button>
         <input 
           type="file" 
           bind:this={fileInput} 
-          onchange={(e) => handleFileUpload(e.target.files)} 
+          onchange={(e) => handleFileSelect(e.target.files)} 
           style="display:none;"
           accept={contentType === 'song' ? 'audio/*,video/webm,.webm,.m4a,.mp3,.opus' : contentType === 'image' ? 'image/*' : 'video/*'}
         >
-        <p class="upload-hint">Voit myös raahata tiedoston tähän</p>
+        {#if selectedFile}
+          <p class="file-name">Valittu: {selectedFile.name}</p>
+        {:else}
+          <p class="upload-hint">Voit myös raahata tiedoston tähän</p>
+        {/if}
       </div>
     {:else}
       <input id="videoUrl" type="url" bind:value={videoUrl} placeholder="https://...">
@@ -299,7 +280,7 @@
     </div>
 
     <div class="form-group">
-      <label>Tulos & Paikka</label>
+      <span class="label-text">Tulos & Paikka</span>
       <div style="display:flex; flex-direction:column; gap:12px; padding:12px; background:#f5f5f5; border-radius:8px; border:1px solid var(--border-color);">
         <div style="display:flex; justify-content:center; gap:8px;">
           <button 
@@ -325,13 +306,52 @@
     </div>
   {/if}
 
-  <button onclick={handleSend} disabled={loading}>Lisää soittolistalle</button>
+  <button onclick={handleSend} disabled={loading}>Lisää</button>
   {#if status.msg}
     <div class="status-msg {status.type}">{status.msg}</div>
   {/if}
 </div>
 
 <style>
+  label, .label-text {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-sub);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .upload-zone {
+    border: 2px dashed var(--border-color);
+    border-radius: var(--radius);
+    padding: 16px;
+    background: #fcfcfc;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+  }
+
+  .upload-zone.dragging {
+    border-color: var(--primary-color);
+    background: rgba(21, 112, 57, 0.05);
+  }
+
+  .upload-zone.has-file {
+    border-color: var(--primary-color);
+    background: #f0f7f2;
+  }
+
+  .file-name {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--primary-color);
+    margin: 0;
+  }
+
   .type-selector {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -377,23 +397,6 @@
     text-align: center;
   }
 
-  .upload-zone {
-    border: 2px dashed var(--border-color);
-    border-radius: var(--radius);
-    padding: 16px;
-    background: #fcfcfc;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    transition: all 0.2s ease;
-  }
-
-  .upload-zone.dragging {
-    border-color: var(--primary-color);
-    background: rgba(21, 112, 57, 0.05);
-  }
-
   .upload-divider {
     font-size: 11px;
     color: var(--text-sub);
@@ -422,4 +425,3 @@
     margin: 0;
   }
 </style>
-

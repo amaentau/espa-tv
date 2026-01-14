@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import SocialSection from './SocialSection.svelte';
 
-  let { deviceId, token, isAdmin, userGroup, refreshTrigger, username } = $props();
+  let { deviceId, token, isAdmin, userGroup, refreshTrigger, username, filterType } = $props();
 
   let historyItems = $state([]);
   let loading = $state(false);
@@ -21,7 +21,16 @@
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!res.ok) throw new Error('Historiaa ei voitu hakea');
-      historyItems = await res.json();
+      const allItems = await res.json();
+      
+      // Filter by selected type and limit to 10
+      const targetType = (filterType || 'veo').toUpperCase();
+      historyItems = allItems
+        .filter(item => {
+          const itemType = (item.eventType || 'VEO').toUpperCase();
+          return itemType === targetType;
+        })
+        .slice(0, 10);
     } catch (err) {
       error = err.message;
     } finally {
@@ -30,7 +39,7 @@
   }
 
   $effect(() => {
-    if (deviceId || refreshTrigger) loadHistory();
+    if (deviceId || refreshTrigger || filterType) loadHistory();
   });
 
   function timeAgo(dateString) {

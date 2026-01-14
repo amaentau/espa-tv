@@ -292,12 +292,16 @@ router.delete('/:deviceId/share/:targetEmail', authenticateToken, async (req, re
     const permClient = getTableClient(TABLE_NAME_PERMISSIONS);
 
     const device = await deviceClient.getEntity(deviceId, 'metadata');
-    if (device.masterEmail !== email) {
-      return res.status(403).json({ error: 'Only the device master can manage shares' });
+    
+    const isMaster = device.masterEmail === email;
+    const isSelfRemoval = targetEmail.toLowerCase().trim() === email.toLowerCase().trim();
+
+    if (!isMaster && !isSelfRemoval) {
+      return res.status(403).json({ error: 'Only the device master or the user themselves can remove access' });
     }
 
-    if (targetEmail === device.masterEmail) {
-      return res.status(400).json({ error: 'Cannot remove the master user' });
+    if (targetEmail === device.masterEmail && isMaster) {
+      return res.status(400).json({ error: 'Cannot remove the master user this way. Use DELETE /devices/:deviceId to release the device.' });
     }
 
     await permClient.deleteEntity(targetEmail, deviceId);

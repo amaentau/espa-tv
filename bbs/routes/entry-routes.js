@@ -4,6 +4,16 @@ const { getTableClient, TABLE_NAME_ENTRIES } = require('../services/storage-serv
 const { authenticateToken } = require('../middleware/auth');
 const { checkAndAutoProvision, iotHubService } = require('./device-routes');
 
+// Helper to check if user can upload/add specific content type
+function canUserManageType(user, type) {
+  if (user.isAdmin) return true;
+  const normalizedType = (type || '').toUpperCase();
+  if (user.userGroup === 'Veo Ylläpitäjä') {
+    return normalizedType === 'VEO';
+  }
+  return false;
+}
+
 // GET /entries/:key
 router.get('/:key', async (req, res) => {
   try {
@@ -54,6 +64,12 @@ router.post('/', authenticateToken, async (req, res) => {
     } = req.body || {};
     
     if (!key || !value1) return res.status(400).json({ error: 'key and value1 required' });
+
+    // Authorization check for content type
+    const contentType = gameGroup ? 'VEO' : (eventType || '').toUpperCase();
+    if (!canUserManageType(req.user, contentType)) {
+      return res.status(403).json({ error: 'No permission to add this content type' });
+    }
 
     const hasAccess = await checkAndAutoProvision(req.user.email, key);
     if (!hasAccess) {
